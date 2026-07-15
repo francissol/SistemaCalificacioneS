@@ -19,17 +19,34 @@ builder.Services.AddScoped<JwtService>();
 
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("ReactPolicy", policy =>
+       options.AddPolicy("ReactPolicy", policy =>
     {
-        policy.WithOrigins("http://localhost:5173",
-            "https://sistema-calificaciones-front-12a3.vercel.app/",
-            "https://sistema-calificaciones-front-12a3-fk6lwiacj-mir-calificaciones.vercel.app",
-            "https://sistema-calificaciones-front-obd85f0yt-mir-calificaciones.vercel.app",
-                            "https://sistema-calificaciones-front.vercel.app")
-              .AllowAnyHeader()
-              .AllowAnyMethod();
+        policy
+            .SetIsOriginAllowed(origin =>
+            {
+                if (string.IsNullOrEmpty(origin))
+                    return false;
+
+                var host = new Uri(origin).Host;
+
+                return host.EndsWith(".vercel.app")
+                    || origin.StartsWith("http://localhost");
+            })
+            .AllowAnyHeader()
+            .AllowAnyMethod();
     });
 });
+    //options.AddPolicy("ReactPolicy", policy =>
+    //{
+       // policy.WithOrigins("http://localhost:5173",
+         //   "https://sistema-calificaciones-front-12a3.vercel.app/",
+           // "https://sistema-calificaciones-front-12a3-fk6lwiacj-mir-calificaciones.vercel.app",
+            //"https://sistema-calificaciones-front-obd85f0yt-mir-calificaciones.vercel.app",
+               //             "https://sistema-calificaciones-front.vercel.app")
+             // .AllowAnyHeader()
+              // .AllowAnyMethod();
+ //   });
+//});
 
 var jwtKey = builder.Configuration["Jwt:Key"]!;
 
@@ -93,8 +110,8 @@ app.UseSwaggerUI();
 
 app.UseHttpsRedirection();
 
-app.UseCors("AllowAll");
-//app.UseCors("ReactPolicy");
+
+app.UseCors("ReactPolicy");
 
 app.UseAuthentication();
 app.UseAuthorization();
