@@ -25,7 +25,7 @@ builder.Services.AddCors(options =>
             "https://sistema-calificaciones-front-12a3.vercel.app/",
             "https://sistema-calificaciones-front-12a3-fk6lwiacj-mir-calificaciones.vercel.app",
             "https://sistema-calificaciones-front-obd85f0yt-mir-calificaciones.vercel.app",
-                            "https://sistema-calificaciones-front.vercel.app/")
+                            "https://sistema-calificaciones-front.vercel.app")
               .AllowAnyHeader()
               .AllowAnyMethod();
     });
