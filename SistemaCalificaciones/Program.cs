@@ -93,7 +93,8 @@ app.UseSwaggerUI();
 
 app.UseHttpsRedirection();
 
-app.UseCors("ReactPolicy");
+app.UseCors("AllowAll");
+//app.UseCors("ReactPolicy");
 
 app.UseAuthentication();
 app.UseAuthorization();
