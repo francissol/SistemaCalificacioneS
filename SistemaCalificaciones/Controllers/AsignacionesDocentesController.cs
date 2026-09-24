@@ -10,7 +10,7 @@ namespace SistemaCalificaciones.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Authorize(Roles = "Administrador,CoordinadorPrimaria,CoordinadorSecundaria,CoordinadorPolitecnico")]
-public class AsignacionesDocentesController : ControllerBase
+public class AsignacionesDocentesController : BaseController
 {
     private readonly AppDbContext _context;
 
@@ -22,12 +22,19 @@ public class AsignacionesDocentesController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> Get()
     {
-        var asignaciones = await _context.AsignacionesDocentes
+        var query = _context.AsignacionesDocentes
             .Include(a => a.Maestro)
-            .Include(a => a.Curso)
-            .ThenInclude(c => c.Grado)
+            .Include(a => a.Curso).ThenInclude(c => c.Grado)
             .Include(a => a.Materia)
             .Include(a => a.AnioEscolar)
+            .AsQueryable();
+
+        if (!EsAdministrador)
+        {
+            query = query.Where(a => a.Curso.CentroId == IdCentro);
+        }
+
+        var asignaciones = await query
             .OrderBy(a => a.Curso.Nombre)
             .ThenBy(a => a.Materia.Nombre)
             .Select(a => new
@@ -53,9 +60,15 @@ public class AsignacionesDocentesController : ControllerBase
     [HttpGet("maestro/{idMaestro}")]
     public async Task<IActionResult> GetPorMaestro(int idMaestro)
     {
+        var maestro = await _context.Maestros.FindAsync(idMaestro);
+        if (maestro == null)
+            return NotFound("Maestro no encontrado.");
+
+        if (!EsAdministrador && maestro.CentroId != IdCentro)
+            return Forbid();
+
         var asignaciones = await _context.AsignacionesDocentes
-            .Include(a => a.Curso)
-            .ThenInclude(c => c.Grado)
+            .Include(a => a.Curso).ThenInclude(c => c.Grado)
             .Include(a => a.Materia)
             .Include(a => a.AnioEscolar)
             .Where(a => a.IdMaestro == idMaestro && a.Activo)
@@ -79,12 +92,18 @@ public class AsignacionesDocentesController : ControllerBase
         if (maestro == null || !maestro.Activo)
             return BadRequest("El maestro no existe o está inactivo.");
 
+        if (!EsAdministrador && maestro.CentroId != IdCentro)
+            return Forbid();
+
         var curso = await _context.Cursos
             .Include(c => c.Grado)
             .FirstOrDefaultAsync(c => c.IdCurso == dto.IdCurso);
 
         if (curso == null || !curso.Activo)
             return BadRequest("El curso no existe o está inactivo.");
+
+        if (!EsAdministrador && curso.CentroId != IdCentro)
+            return Forbid();
 
         var materia = await _context.Materias.FindAsync(dto.IdMateria);
         if (materia == null || !materia.Activa)
@@ -133,10 +152,15 @@ public class AsignacionesDocentesController : ControllerBase
     [HttpPut("{id}")]
     public async Task<IActionResult> Actualizar(int id, CrearAsignacionDocenteDto dto)
     {
-        var asignacion = await _context.AsignacionesDocentes.FindAsync(id);
+        var asignacion = await _context.AsignacionesDocentes
+            .Include(a => a.Curso)
+            .FirstOrDefaultAsync(a => a.IdAsignacionDocente == id);
 
         if (asignacion == null)
             return NotFound("Asignación no encontrada.");
+
+        if (!EsAdministrador && asignacion.Curso.CentroId != IdCentro)
+            return Forbid();
 
         var curso = await _context.Cursos
             .Include(c => c.Grado)
@@ -144,6 +168,9 @@ public class AsignacionesDocentesController : ControllerBase
 
         if (curso == null)
             return BadRequest("El curso no existe.");
+
+        if (!EsAdministrador && curso.CentroId != IdCentro)
+            return Forbid();
 
         var materiaPerteneceAlGrado = await _context.GradoMaterias
             .AnyAsync(gm => gm.IdGrado == curso.IdGrado && gm.IdMateria == dto.IdMateria);
@@ -175,10 +202,15 @@ public class AsignacionesDocentesController : ControllerBase
     [HttpPut("{id}/estado")]
     public async Task<IActionResult> CambiarEstado(int id)
     {
-        var asignacion = await _context.AsignacionesDocentes.FindAsync(id);
+        var asignacion = await _context.AsignacionesDocentes
+            .Include(a => a.Curso)
+            .FirstOrDefaultAsync(a => a.IdAsignacionDocente == id);
 
         if (asignacion == null)
             return NotFound("Asignación no encontrada.");
+
+        if (!EsAdministrador && asignacion.Curso.CentroId != IdCentro)
+            return Forbid();
 
         asignacion.Activo = !asignacion.Activo;
 

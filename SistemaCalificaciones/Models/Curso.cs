@@ -1,4 +1,6 @@
-﻿namespace SistemaCalificaciones.Models
+﻿using System.ComponentModel.DataAnnotations.Schema;
+
+namespace SistemaCalificaciones.Models
 {
 
 
@@ -8,6 +10,10 @@
 
         public int IdGrado { get; set; }
         public Grado Grado { get; set; } = null!;
+        public int CentroId { get; set; }
+
+        [ForeignKey("CentroId")]
+        public Centro? Centro { get; set; }
 
         public string Nombre { get; set; } = string.Empty;
         public string? Seccion { get; set; }

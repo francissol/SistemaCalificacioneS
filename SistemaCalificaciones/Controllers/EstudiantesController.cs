@@ -4,8 +4,6 @@ using Microsoft.EntityFrameworkCore;
 using SistemaCalificaciones.Data;
 using SistemaCalificaciones.DTOs.Estudiantes;
 using SistemaCalificaciones.Models;
-using SistemaCalificaciones.Services;
-using System.Security.Claims;
 using SistemaCalificaciones.Helpers;
 
 namespace SistemaCalificaciones.Controllers;
@@ -13,38 +11,30 @@ namespace SistemaCalificaciones.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Authorize(Roles = "Administrador,CoordinadorPrimaria,CoordinadorSecundaria,CoordinadorPolitecnico")]
-public class EstudiantesController : ControllerBase
+public class EstudiantesController : BaseController
 {
     private readonly AppDbContext _context;
-    private readonly UsuarioGeneratorService _usuarioGenerator;
 
-    public EstudiantesController(AppDbContext context, UsuarioGeneratorService usuarioGenerator)
+    public EstudiantesController(AppDbContext context)
     {
         _context = context;
-        _usuarioGenerator = usuarioGenerator;
     }
 
-    [HttpGet]
-    public async Task<IActionResult> Get()
-    {
-        var nivelCoordinador = NivelHelper.ObtenerNivelPorRol(User);
+  
 
+    [HttpGet]
+     public async Task<IActionResult> Get()
+    {
         var query = _context.Estudiantes
-            .Include(e => e.Usuario)
             .Include(e => e.Inscripciones)
                 .ThenInclude(i => i.Curso)
                     .ThenInclude(c => c.Grado)
                         .ThenInclude(g => g.Nivel)
             .AsQueryable();
 
-        if (nivelCoordinador != null)
+        if (!EsAdministrador)
         {
-            query = query.Where(e =>
-                e.Inscripciones.Any(i =>
-                    i.Estado == "Activo" &&
-                    i.Curso.Grado.Nivel.Nombre == nivelCoordinador
-                )
-            );
+            query = query.Where(e => e.CentroId == IdCentro);
         }
 
         var estudiantes = await query
@@ -58,12 +48,13 @@ public class EstudiantesController : ControllerBase
                 e.Telefono,
                 e.Correo,
                 e.Activo,
-                Usuario = e.Usuario != null ? e.Usuario.NombreUsuario : null,
+
                 CursoActual = e.Inscripciones
                     .Where(i => i.Estado == "Activo")
                     .OrderByDescending(i => i.IdInscripcion)
                     .Select(i => i.Curso.Nombre)
                     .FirstOrDefault(),
+
                 Nivel = e.Inscripciones
                     .Where(i => i.Estado == "Activo")
                     .OrderByDescending(i => i.IdInscripcion)
@@ -74,6 +65,9 @@ public class EstudiantesController : ControllerBase
 
         return Ok(estudiantes);
     }
+    // ============================================================
+    // OBTENER ESTUDIANTE
+    // ============================================================
 
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
@@ -81,7 +75,6 @@ public class EstudiantesController : ControllerBase
         var nivelCoordinador = NivelHelper.ObtenerNivelPorRol(User);
 
         var estudiante = await _context.Estudiantes
-            .Include(e => e.Usuario)
             .Include(e => e.PadreEstudiantes)
                 .ThenInclude(pe => pe.Padre)
             .Include(e => e.Inscripciones)
@@ -103,59 +96,68 @@ public class EstudiantesController : ControllerBase
                 return Forbid();
         }
 
+        if (!EsAdministrador)
+        {
+            var perteneceCentro = estudiante.Inscripciones.Any(i =>
+                i.Estado == "Activo" &&
+                i.Curso.CentroId == IdCentro);
+
+            if (!perteneceCentro)
+                return Forbid();
+        }
+
         return Ok(estudiante);
     }
+
+    // ============================================================
+    // CREAR ESTUDIANTE
+    // ============================================================
 
     [HttpPost]
     public async Task<IActionResult> Crear(CrearEstudianteDto dto)
     {
-        using var transaction = await _context.Database.BeginTransactionAsync();
+        using var transaction =
+            await _context.Database.BeginTransactionAsync();
 
-        var rolEstudiante = await _context.Roles.FirstOrDefaultAsync(r => r.Nombre == "Estudiante");
-        var rolPadre = await _context.Roles.FirstOrDefaultAsync(r => r.Nombre == "Padre");
+        var existeMatricula = await _context.Estudiantes
+            .AnyAsync(e => e.Matricula == dto.Matricula);
 
-        if (rolEstudiante == null || rolPadre == null)
-            return BadRequest("Faltan roles en la base de datos.");
-
-        var existeMatricula = await _context.Estudiantes.AnyAsync(e => e.Matricula == dto.Matricula);
         if (existeMatricula)
-            return BadRequest("Ya existe un estudiante con esa matrícula.");
+            return BadRequest(
+                "Ya existe un estudiante con esa matrícula.");
 
-        var nivelCoordinador = NivelHelper.ObtenerNivelPorRol(User);
+        var nivelCoordinador =
+            NivelHelper.ObtenerNivelPorRol(User);
 
         var curso = await _context.Cursos
             .Include(c => c.Grado)
                 .ThenInclude(g => g.Nivel)
-            .FirstOrDefaultAsync(c => c.IdCurso == dto.IdCurso && c.Activo);
+            .FirstOrDefaultAsync(
+                c => c.IdCurso == dto.IdCurso && c.Activo);
 
         if (curso == null)
-            return BadRequest("El curso no existe o está inactivo.");
+            return BadRequest(
+                "El curso no existe o está inactivo.");
 
-        if (nivelCoordinador != null && curso.Grado.Nivel.Nombre != nivelCoordinador)
+        if (!EsAdministrador && curso.CentroId != IdCentro)
             return Forbid();
 
-        var anioExiste = await _context.AniosEscolares.AnyAsync(a => a.IdAnioEscolar == dto.IdAnioEscolar && !a.Cerrado);
+        if (nivelCoordinador != null &&
+            curso.Grado.Nivel.Nombre != nivelCoordinador)
+            return Forbid();
+
+        var anioExiste = await _context.AniosEscolares
+            .AnyAsync(a =>
+                a.IdAnioEscolar == dto.IdAnioEscolar &&
+                !a.Cerrado);
+
         if (!anioExiste)
-            return BadRequest("El año escolar no existe o está cerrado.");
-
-        var usuarioEstudianteNombre = await _usuarioGenerator.GenerarNombreUsuarioAsync(dto.Nombres, dto.Apellidos);
-        var passwordTemporal = _usuarioGenerator.GenerarPasswordTemporal();
-
-        var usuarioEstudiante = new Usuario
-        {
-            IdRol = rolEstudiante.IdRol,
-            NombreUsuario = usuarioEstudianteNombre,
-            PasswordHash = _usuarioGenerator.HashearPassword(passwordTemporal),
-            DebeCambiarPassword = true,
-            Activo = true
-        };
-
-        _context.Usuarios.Add(usuarioEstudiante);
-        await _context.SaveChangesAsync();
+            return BadRequest(
+                "El año escolar no existe o está cerrado.");
 
         var estudiante = new Estudiante
         {
-            IdUsuario = usuarioEstudiante.IdUsuario,
+            CentroId = curso.CentroId,
             Matricula = dto.Matricula,
             Nombres = dto.Nombres,
             Apellidos = dto.Apellidos,
@@ -169,6 +171,7 @@ public class EstudiantesController : ControllerBase
         };
 
         _context.Estudiantes.Add(estudiante);
+
         await _context.SaveChangesAsync();
 
         var inscripcion = new Inscripcion
@@ -183,7 +186,8 @@ public class EstudiantesController : ControllerBase
 
         Padre? padre = null;
 
-        if (!string.IsNullOrWhiteSpace(dto.NombrePadre) && !string.IsNullOrWhiteSpace(dto.ApellidoPadre))
+        if (!string.IsNullOrWhiteSpace(dto.NombrePadre) &&
+            !string.IsNullOrWhiteSpace(dto.ApellidoPadre))
         {
             padre = await _context.Padres
                 .FirstOrDefaultAsync(p =>
@@ -193,23 +197,8 @@ public class EstudiantesController : ControllerBase
 
             if (padre == null)
             {
-                var usuarioPadreNombre = await _usuarioGenerator.GenerarNombreUsuarioAsync(dto.NombrePadre, dto.ApellidoPadre);
-
-                var usuarioPadre = new Usuario
-                {
-                    IdRol = rolPadre.IdRol,
-                    NombreUsuario = usuarioPadreNombre,
-                    PasswordHash = _usuarioGenerator.HashearPassword(passwordTemporal),
-                    DebeCambiarPassword = true,
-                    Activo = true
-                };
-
-                _context.Usuarios.Add(usuarioPadre);
-                await _context.SaveChangesAsync();
-
                 padre = new Padre
                 {
-                    IdUsuario = usuarioPadre.IdUsuario,
                     Nombres = dto.NombrePadre,
                     Apellidos = dto.ApellidoPadre,
                     Telefono = dto.TelefonoPadre,
@@ -218,21 +207,25 @@ public class EstudiantesController : ControllerBase
                 };
 
                 _context.Padres.Add(padre);
+
                 await _context.SaveChangesAsync();
             }
 
-            var relacionExiste = await _context.PadreEstudiantes
-                .AnyAsync(pe => pe.IdPadre == padre.IdPadre && pe.IdEstudiante == estudiante.IdEstudiante);
+            var relacionExiste =
+                await _context.PadreEstudiantes.AnyAsync(pe =>
+                    pe.IdPadre == padre.IdPadre &&
+                    pe.IdEstudiante == estudiante.IdEstudiante);
 
             if (!relacionExiste)
             {
-                _context.PadreEstudiantes.Add(new PadreEstudiante
-                {
-                    IdPadre = padre.IdPadre,
-                    IdEstudiante = estudiante.IdEstudiante,
-                    Parentesco = dto.Parentesco,
-                    ResponsableAcademico = true
-                });
+                _context.PadreEstudiantes.Add(
+                    new PadreEstudiante
+                    {
+                        IdPadre = padre.IdPadre,
+                        IdEstudiante = estudiante.IdEstudiante,
+                        Parentesco = dto.Parentesco,
+                        ResponsableAcademico = true
+                    });
             }
         }
 
@@ -243,16 +236,21 @@ public class EstudiantesController : ControllerBase
         {
             mensaje = "Estudiante creado correctamente.",
             estudiante.IdEstudiante,
-            UsuarioEstudiante = usuarioEstudianteNombre,
-            PasswordTemporal = passwordTemporal,
             PadreCreadoORelacionado = padre != null
         });
     }
 
+    // ============================================================
+    // ACTUALIZAR DATOS DE CONTACTO
+    // ============================================================
+
     [HttpPut("{id}/datos-contacto")]
-    public async Task<IActionResult> ActualizarDatosContacto(int id, ActualizarDatosEstudianteDto dto)
+    public async Task<IActionResult> ActualizarDatosContacto(
+        int id,
+        ActualizarDatosEstudianteDto dto)
     {
-        var nivelCoordinador = NivelHelper.ObtenerNivelPorRol(User);
+        var nivelCoordinador =
+            NivelHelper.ObtenerNivelPorRol(User);
 
         var estudiante = await _context.Estudiantes
             .Include(e => e.Inscripciones)
@@ -290,15 +288,17 @@ public class EstudiantesController : ControllerBase
         });
     }
 
-
+    // ============================================================
+    // CAMBIAR ESTADO
+    // ============================================================
 
     [HttpPut("{id}/estado")]
     public async Task<IActionResult> CambiarEstado(int id)
     {
-        var nivelCoordinador = NivelHelper.ObtenerNivelPorRol(User);
+        var nivelCoordinador =
+            NivelHelper.ObtenerNivelPorRol(User);
 
         var estudiante = await _context.Estudiantes
-            .Include(e => e.Usuario)
             .Include(e => e.Inscripciones)
                 .ThenInclude(i => i.Curso)
                     .ThenInclude(c => c.Grado)
@@ -320,9 +320,6 @@ public class EstudiantesController : ControllerBase
 
         estudiante.Activo = !estudiante.Activo;
 
-        if (estudiante.Usuario != null)
-            estudiante.Usuario.Activo = estudiante.Activo;
-
         await _context.SaveChangesAsync();
 
         return Ok(new
@@ -332,5 +329,4 @@ public class EstudiantesController : ControllerBase
             estudiante.Activo
         });
     }
-
 }

@@ -1,4 +1,6 @@
-﻿namespace SistemaCalificaciones.Models
+﻿using System.ComponentModel.DataAnnotations.Schema;
+
+namespace SistemaCalificaciones.Models
 {
 
     public class Maestro
@@ -8,6 +10,11 @@
         public int? IdUsuario { get; set; }
         public Usuario? Usuario { get; set; }
 
+        // Agregar estas líneas dentro de la clase Maestro:
+        public int? CentroId { get; set; }
+
+        [ForeignKey("CentroId")]
+        public Centro? Centro { get; set; }
         public string? CodigoEmpleado { get; set; }
         public string Nombres { get; set; } = string.Empty;
         public string Apellidos { get; set; } = string.Empty;

@@ -3,8 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SistemaCalificaciones.Data;
 using SistemaCalificaciones.DTOs.Cursos;
-using SistemaCalificaciones.Models;
 using SistemaCalificaciones.Helpers;
+using SistemaCalificaciones.Models;
 
 namespace SistemaCalificaciones.Controllers;
 
@@ -25,11 +25,28 @@ public class CursosController : ControllerBase
     {
         var nivelCoordinador = NivelHelper.ObtenerNivelPorRol(User);
 
+        var rol = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+
+        var idCentroClaim = User.FindFirst("IdCentro")?.Value;
+
+        int idCentro = 0;
+
+        if (!string.IsNullOrEmpty(idCentroClaim))
+            idCentro = int.Parse(idCentroClaim);
+
         var query = _context.Cursos
             .Include(c => c.Grado)
                 .ThenInclude(g => g.Nivel)
+            .Include(c => c.Centro)
             .AsQueryable();
 
+        // Coordinadores solo ven su centro
+        if (rol != "Administrador")
+        {
+            query = query.Where(c => c.CentroId == idCentro);
+        }
+
+        // Coordinadores solo ven su nivel
         if (nivelCoordinador != null)
         {
             query = query.Where(c => c.Grado.Nivel.Nombre == nivelCoordinador);
@@ -45,6 +62,8 @@ public class CursosController : ControllerBase
                 c.Seccion,
                 c.Activo,
                 c.IdGrado,
+                c.CentroId,
+                Centro = c.Centro.Nombre,
                 Grado = c.Grado.Nombre,
                 Nivel = c.Grado.Nivel.Nombre
             })
@@ -58,15 +77,29 @@ public class CursosController : ControllerBase
     {
         var nivelCoordinador = NivelHelper.ObtenerNivelPorRol(User);
 
+        var rol = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+
+        var idCentroClaim = User.FindFirst("IdCentro")?.Value;
+
+        int idCentro = 0;
+
+        if (!string.IsNullOrEmpty(idCentroClaim))
+            idCentro = int.Parse(idCentroClaim);
+
         var curso = await _context.Cursos
             .Include(c => c.Grado)
                 .ThenInclude(g => g.Nivel)
+            .Include(c => c.Centro)
             .FirstOrDefaultAsync(c => c.IdCurso == id);
 
         if (curso == null)
             return NotFound("Curso no encontrado.");
 
-        if (nivelCoordinador != null && curso.Grado.Nivel.Nombre != nivelCoordinador)
+        if (rol != "Administrador" && curso.CentroId != idCentro)
+            return Forbid();
+
+        if (nivelCoordinador != null &&
+            curso.Grado.Nivel.Nombre != nivelCoordinador)
             return Forbid();
 
         return Ok(curso);
@@ -77,11 +110,26 @@ public class CursosController : ControllerBase
     {
         var nivelCoordinador = NivelHelper.ObtenerNivelPorRol(User);
 
+        var rol = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+
+        var idCentroClaim = User.FindFirst("IdCentro")?.Value;
+
+        int idCentro = 0;
+
+        if (!string.IsNullOrEmpty(idCentroClaim))
+            idCentro = int.Parse(idCentroClaim);
+
         var query = _context.Cursos
             .Include(c => c.Grado)
                 .ThenInclude(g => g.Nivel)
+            .Include(c => c.Centro)
             .Where(c => c.IdGrado == idGrado && c.Activo)
             .AsQueryable();
+
+        if (rol != "Administrador")
+        {
+            query = query.Where(c => c.CentroId == idCentro);
+        }
 
         if (nivelCoordinador != null)
         {
@@ -95,6 +143,8 @@ public class CursosController : ControllerBase
                 c.IdCurso,
                 c.Nombre,
                 c.Seccion,
+                c.CentroId,
+                Centro = c.Centro.Nombre,
                 Grado = c.Grado.Nombre,
                 Nivel = c.Grado.Nivel.Nombre
             })
@@ -103,11 +153,19 @@ public class CursosController : ControllerBase
         return Ok(cursos);
     }
 
-
     [HttpPost]
     public async Task<IActionResult> Crear(CrearCursoDto dto)
     {
         var nivelCoordinador = NivelHelper.ObtenerNivelPorRol(User);
+
+        var rol = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+
+        var idCentroClaim = User.FindFirst("IdCentro")?.Value;
+
+        int idCentro = 0;
+
+        if (!string.IsNullOrEmpty(idCentroClaim))
+            idCentro = int.Parse(idCentroClaim);
 
         var grado = await _context.Grados
             .Include(g => g.Nivel)
@@ -116,14 +174,20 @@ public class CursosController : ControllerBase
         if (grado == null)
             return BadRequest("El grado seleccionado no existe.");
 
-        if (nivelCoordinador != null && grado.Nivel.Nombre != nivelCoordinador)
+        if (nivelCoordinador != null &&
+            grado.Nivel.Nombre != nivelCoordinador)
             return Forbid();
+
+        int centroGuardar = rol == "Administrador"
+            ? dto.IdCentro!.Value
+            : idCentro;
 
         var duplicado = await _context.Cursos
             .AnyAsync(c =>
                 c.Nombre == dto.Nombre &&
                 c.IdGrado == dto.IdGrado &&
-                c.Seccion == dto.Seccion);
+                c.Seccion == dto.Seccion &&
+                c.CentroId == centroGuardar);
 
         if (duplicado)
             return BadRequest("Ya existe un curso con ese nombre, grado y sección.");
@@ -131,12 +195,14 @@ public class CursosController : ControllerBase
         var curso = new Curso
         {
             IdGrado = dto.IdGrado,
+            CentroId = centroGuardar,
             Nombre = dto.Nombre,
             Seccion = dto.Seccion,
             Activo = true
         };
 
         _context.Cursos.Add(curso);
+
         await _context.SaveChangesAsync();
 
         await AsignarCompetenciasAutomaticas(curso.IdCurso);
@@ -144,10 +210,20 @@ public class CursosController : ControllerBase
         return Ok(curso);
     }
 
+   
     [HttpPut("{id}")]
     public async Task<IActionResult> Actualizar(int id, CrearCursoDto dto)
     {
         var nivelCoordinador = NivelHelper.ObtenerNivelPorRol(User);
+
+        var rol = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+
+        var idCentroClaim = User.FindFirst("IdCentro")?.Value;
+
+        int idCentro = 0;
+
+        if (!string.IsNullOrEmpty(idCentroClaim))
+            idCentro = int.Parse(idCentroClaim);
 
         var curso = await _context.Cursos
             .Include(c => c.Grado)
@@ -157,7 +233,12 @@ public class CursosController : ControllerBase
         if (curso == null)
             return NotFound("Curso no encontrado.");
 
-        if (nivelCoordinador != null && curso.Grado.Nivel.Nombre != nivelCoordinador)
+        // El coordinador solo puede modificar cursos de su centro
+        if (rol != "Administrador" && curso.CentroId != idCentro)
+            return Forbid();
+
+        if (nivelCoordinador != null &&
+            curso.Grado.Nivel.Nombre != nivelCoordinador)
             return Forbid();
 
         var grado = await _context.Grados
@@ -167,20 +248,27 @@ public class CursosController : ControllerBase
         if (grado == null)
             return BadRequest("El grado seleccionado no existe.");
 
-        if (nivelCoordinador != null && grado.Nivel.Nombre != nivelCoordinador)
+        if (nivelCoordinador != null &&
+            grado.Nivel.Nombre != nivelCoordinador)
             return Forbid();
+
+        int centroGuardar = rol == "Administrador"
+            ? dto.IdCentro!.Value
+            : idCentro;
 
         var duplicado = await _context.Cursos
             .AnyAsync(c =>
                 c.Nombre == dto.Nombre &&
                 c.IdGrado == dto.IdGrado &&
                 c.Seccion == dto.Seccion &&
+                c.CentroId == centroGuardar &&
                 c.IdCurso != id);
 
         if (duplicado)
             return BadRequest("Ya existe otro curso con ese nombre, grado y sección.");
 
         curso.IdGrado = dto.IdGrado;
+        curso.CentroId = centroGuardar;
         curso.Nombre = dto.Nombre;
         curso.Seccion = dto.Seccion;
 
@@ -194,6 +282,15 @@ public class CursosController : ControllerBase
     {
         var nivelCoordinador = NivelHelper.ObtenerNivelPorRol(User);
 
+        var rol = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+
+        var idCentroClaim = User.FindFirst("IdCentro")?.Value;
+
+        int idCentro = 0;
+
+        if (!string.IsNullOrEmpty(idCentroClaim))
+            idCentro = int.Parse(idCentroClaim);
+
         var curso = await _context.Cursos
             .Include(c => c.Grado)
                 .ThenInclude(g => g.Nivel)
@@ -202,7 +299,11 @@ public class CursosController : ControllerBase
         if (curso == null)
             return NotFound("Curso no encontrado.");
 
-        if (nivelCoordinador != null && curso.Grado.Nivel.Nombre != nivelCoordinador)
+        if (rol != "Administrador" && curso.CentroId != idCentro)
+            return Forbid();
+
+        if (nivelCoordinador != null &&
+            curso.Grado.Nivel.Nombre != nivelCoordinador)
             return Forbid();
 
         curso.Activo = !curso.Activo;
@@ -222,6 +323,15 @@ public class CursosController : ControllerBase
     {
         var nivelCoordinador = NivelHelper.ObtenerNivelPorRol(User);
 
+        var rol = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+
+        var idCentroClaim = User.FindFirst("IdCentro")?.Value;
+
+        int idCentro = 0;
+
+        if (!string.IsNullOrEmpty(idCentroClaim))
+            idCentro = int.Parse(idCentroClaim);
+
         var curso = await _context.Cursos
             .Include(c => c.Grado)
                 .ThenInclude(g => g.Nivel)
@@ -230,7 +340,11 @@ public class CursosController : ControllerBase
         if (curso == null)
             return NotFound("Curso no encontrado.");
 
-        if (nivelCoordinador != null && curso.Grado.Nivel.Nombre != nivelCoordinador)
+        if (rol != "Administrador" && curso.CentroId != idCentro)
+            return Forbid();
+
+        if (nivelCoordinador != null &&
+            curso.Grado.Nivel.Nombre != nivelCoordinador)
             return Forbid();
 
         var tieneInscripciones = await _context.Inscripciones
@@ -240,10 +354,12 @@ public class CursosController : ControllerBase
             return BadRequest("No puedes eliminar este curso porque tiene estudiantes inscritos.");
 
         _context.Cursos.Remove(curso);
+
         await _context.SaveChangesAsync();
 
         return Ok("Curso eliminado correctamente.");
     }
+
 
     private async Task AsignarCompetenciasAutomaticas(int idCurso)
     {

@@ -26,6 +26,7 @@ public class AuthController : ControllerBase
     {
         var usuario = await _context.Usuarios
             .Include(u => u.Rol)
+                .Include(u => u.Centro)
             .FirstOrDefaultAsync(u => u.NombreUsuario == dto.NombreUsuario);
 
         if (usuario == null)
@@ -54,7 +55,10 @@ public class AuthController : ControllerBase
             Token = token,
             NombreUsuario = usuario.NombreUsuario,
             Rol = usuario.Rol.Nombre,
-            DebeCambiarPassword = usuario.DebeCambiarPassword
+
+            DebeCambiarPassword = usuario.DebeCambiarPassword,
+            IdCentro = usuario.CentroId,
+            Centro = usuario.Centro?.Nombre
         });
     }
 

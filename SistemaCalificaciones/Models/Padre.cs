@@ -5,9 +5,6 @@
     {
         public int IdPadre { get; set; }
 
-        public int? IdUsuario { get; set; }
-        public Usuario? Usuario { get; set; }
-
         public string Nombres { get; set; } = string.Empty;
         public string Apellidos { get; set; } = string.Empty;
 

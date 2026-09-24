@@ -22,7 +22,7 @@ public class PadresController : ControllerBase
     public async Task<IActionResult> Get()
     {
         var padres = await _context.Padres
-            .Include(p => p.Usuario)
+        
             .Include(p => p.PadreEstudiantes)
             .OrderBy(p => p.Nombres)
             .Select(p => new
@@ -35,7 +35,6 @@ public class PadresController : ControllerBase
                 p.Direccion,
                 p.Ocupacion,
                 p.Activo,
-                Usuario = p.Usuario != null ? p.Usuario.NombreUsuario : null,
                 CantidadHijos = p.PadreEstudiantes.Count
             })
             .ToListAsync();
@@ -47,7 +46,7 @@ public class PadresController : ControllerBase
     public async Task<IActionResult> GetById(int id)
     {
         var padre = await _context.Padres
-            .Include(p => p.Usuario)
+          
             .Include(p => p.PadreEstudiantes)
                 .ThenInclude(pe => pe.Estudiante)
             .FirstOrDefaultAsync(p => p.IdPadre == id);
@@ -65,7 +64,7 @@ public class PadresController : ControllerBase
             padre.Direccion,
             padre.Ocupacion,
             padre.Activo,
-            Usuario = padre.Usuario != null ? padre.Usuario.NombreUsuario : null,
+          
             Hijos = padre.PadreEstudiantes.Select(pe => new
             {
                 pe.Estudiante.IdEstudiante,
@@ -138,7 +137,7 @@ public class PadresController : ControllerBase
     public async Task<IActionResult> CambiarEstado(int id)
     {
         var padre = await _context.Padres
-            .Include(p => p.Usuario)
+            
             .FirstOrDefaultAsync(p => p.IdPadre == id);
 
         if (padre == null)
@@ -146,8 +145,6 @@ public class PadresController : ControllerBase
 
         padre.Activo = !padre.Activo;
 
-        if (padre.Usuario != null)
-            padre.Usuario.Activo = padre.Activo;
 
         await _context.SaveChangesAsync();
 

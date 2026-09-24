@@ -18,8 +18,7 @@ public class AppDbContext : DbContext
 
     public DbSet<ResultadoAprendizaje> ResultadosAprendizaje { get; set; }
 
-
-    //public DbSet<CalificacionRA> CalificacionesRA { get; set; }
+    public DbSet<Centro> Centros { get; set; } // <--- Dejado una sola vez
 
     public DbSet<AnioEscolar> AniosEscolares => Set<AnioEscolar>();
     public DbSet<Nivel> Niveles => Set<Nivel>();
@@ -38,11 +37,8 @@ public class AppDbContext : DbContext
     public DbSet<Observacion> Observaciones => Set<Observacion>();
 
     public DbSet<Competencia> Competencias { get; set; }
-
     public DbSet<CompetenciaGradoMateria> CompetenciasGradoMateria { get; set; }
-
     public DbSet<ActividadCompetencia> ActividadesCompetencias { get; set; }
-
     public DbSet<NotaCompetencia> NotasCompetencias { get; set; }
     public DbSet<CalificacionCompetenciaPeriodo> CalificacionesCompetenciasPeriodo => Set<CalificacionCompetenciaPeriodo>();
 
@@ -51,8 +47,10 @@ public class AppDbContext : DbContext
         base.OnModelCreating(modelBuilder);
 
         // =========================
-        // LLAVES PRIMARIAS
+        // LLAVES PRIMARIAS Y TABLAS
         // =========================
+
+        modelBuilder.Entity<Centro>().ToTable("Centros").HasKey(x => x.Id); // <--- Mapeo explícito a la tabla 'Centros'
 
         modelBuilder.Entity<Rol>().HasKey(x => x.IdRol);
         modelBuilder.Entity<Usuario>().HasKey(x => x.IdUsuario);
@@ -76,8 +74,6 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<CalificacionPeriodo>().HasKey(x => x.IdCalificacionPeriodo);
         modelBuilder.Entity<Observacion>().HasKey(x => x.IdObservacion);
 
-
-
         modelBuilder.Entity<Competencia>().HasKey(x => x.IdCompetencia);
         modelBuilder.Entity<CompetenciaGradoMateria>().HasKey(x => x.IdCompetenciaGradoMateria);
         modelBuilder.Entity<ActividadCompetencia>().HasKey(x => x.IdActividadCompetencia);
@@ -99,12 +95,35 @@ public class AppDbContext : DbContext
         // RELACIONES
         // =========================
 
+        modelBuilder.Entity<Usuario>()
+            .HasOne(u => u.Centro)
+            .WithMany()
+            .HasForeignKey(u => u.CentroId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Curso>()
+            .HasOne(c => c.Centro)
+            .WithMany()
+            .HasForeignKey(c => c.CentroId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Estudiante>()
+            .HasOne(e => e.Centro)
+            .WithMany()
+            .HasForeignKey(e => e.CentroId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Maestro>()
+            .HasOne(m => m.Centro)
+            .WithMany()
+            .HasForeignKey(m => m.CentroId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<ActividadCompetencia>()
-    .HasOne(a => a.ResultadoAprendizaje)
-    .WithMany()
-    .HasForeignKey(a => a.IdResultadoAprendizaje)
-    .OnDelete(DeleteBehavior.Restrict);
+            .HasOne(a => a.ResultadoAprendizaje)
+            .WithMany()
+            .HasForeignKey(a => a.IdResultadoAprendizaje)
+            .OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<Usuario>()
             .HasOne(u => u.Rol)
@@ -112,11 +131,6 @@ public class AppDbContext : DbContext
             .HasForeignKey(u => u.IdRol)
             .OnDelete(DeleteBehavior.Restrict);
 
-        modelBuilder.Entity<Estudiante>()
-            .HasOne(e => e.Usuario)
-            .WithOne(u => u.Estudiante)
-            .HasForeignKey<Estudiante>(e => e.IdUsuario)
-            .OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<Maestro>()
             .HasOne(m => m.Usuario)
@@ -124,11 +138,7 @@ public class AppDbContext : DbContext
             .HasForeignKey<Maestro>(m => m.IdUsuario)
             .OnDelete(DeleteBehavior.Restrict);
 
-        modelBuilder.Entity<Padre>()
-            .HasOne(p => p.Usuario)
-            .WithOne(u => u.Padre)
-            .HasForeignKey<Padre>(p => p.IdUsuario)
-            .OnDelete(DeleteBehavior.Restrict);
+       
 
         modelBuilder.Entity<PeriodoPublicacion>()
             .HasOne(p => p.AnioEscolar)
@@ -299,8 +309,8 @@ public class AppDbContext : DbContext
             .IsUnique();
 
         modelBuilder.Entity<AsignacionDocente>()
-     .HasIndex(a => new { a.IdCurso, a.IdMateria, a.IdAnioEscolar })
-     .IsUnique();
+            .HasIndex(a => new { a.IdCurso, a.IdMateria, a.IdAnioEscolar })
+            .IsUnique();
 
         modelBuilder.Entity<NotaActividad>()
             .HasIndex(n => new { n.IdActividadEvaluativa, n.IdEstudiante })
@@ -310,11 +320,8 @@ public class AppDbContext : DbContext
             .HasIndex(c => new { c.IdEstudiante, c.IdAsignacionDocente, c.IdPeriodoPublicacion })
             .IsUnique();
 
-
         modelBuilder.Entity<CursoMateria>()
-    .HasKey(cm => cm.IdCursoMateria);
-
-
+            .HasKey(cm => cm.IdCursoMateria);
 
         // =========================
         // RELACIONES COMPETENCIAS
@@ -391,6 +398,7 @@ public class AppDbContext : DbContext
             .WithMany()
             .HasForeignKey(x => x.IdCompetencia)
             .OnDelete(DeleteBehavior.Restrict);
+
         // =========================
         // DECIMALES
         // =========================
@@ -407,10 +415,9 @@ public class AppDbContext : DbContext
             .Property(c => c.NotaFinal)
             .HasColumnType("decimal(5,2)");
 
-
         modelBuilder.Entity<NotaCompetencia>()
-    .Property(n => n.Nota)
-    .HasColumnType("decimal(5,2)");
+            .Property(n => n.Nota)
+            .HasColumnType("decimal(5,2)");
 
         modelBuilder.Entity<CalificacionCompetenciaPeriodo>()
             .Property(c => c.Promedio)

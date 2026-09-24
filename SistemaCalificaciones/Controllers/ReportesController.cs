@@ -48,10 +48,14 @@ public class ReportesController : ControllerBase
         var estudiante = await _context.Estudiantes
             .Include(e => e.Inscripciones)
                 .ThenInclude(i => i.Curso)
+            .Include(c => c.Centro)
             .FirstOrDefaultAsync(e => e.IdEstudiante == idEstudiante);
 
         if (estudiante == null)
             return NotFound("Estudiante no encontrado.");
+
+        if (!TieneAccesoAlCentro(estudiante.CentroId))
+            return Forbid();
 
         var calificaciones = await _context.CalificacionesPeriodo
             .Include(c => c.AsignacionDocente)
@@ -83,6 +87,7 @@ public class ReportesController : ControllerBase
             estudiante.Matricula,
             Estudiante = estudiante.Nombres + " " + estudiante.Apellidos,
             Curso = cursoActual,
+
             PromedioGeneral = promedio,
             Calificaciones = calificaciones
         });
@@ -96,10 +101,14 @@ public class ReportesController : ControllerBase
         var curso = await _context.Cursos
             .Include(c => c.Grado)
                 .ThenInclude(g => g.Nivel)
+                 .Include(c => c.Centro)
             .FirstOrDefaultAsync(c => c.IdCurso == idCurso);
 
         if (curso == null)
             return NotFound("Curso no encontrado.");
+
+        if (!TieneAccesoAlCentro(curso.CentroId))
+            return Forbid();
 
         if (curso.Grado.Nivel.Nombre != "Secundaria")
             return BadRequest("Este reporte solo aplica para secundaria.");
@@ -160,6 +169,7 @@ public class ReportesController : ControllerBase
                 estudiante.Matricula,
                 Curso = curso.Nombre,
                 Grado = curso.Grado.Nombre,
+
                 Periodo = periodo.Nombre,
                 Materias = materias
             });
@@ -170,6 +180,7 @@ public class ReportesController : ControllerBase
             Curso = curso.Nombre,
             Grado = curso.Grado.Nombre,
             Periodo = periodo.Nombre,
+            Centro = curso.Centro?.Nombre,
             Reportes = reportes
         });
     }
@@ -177,10 +188,15 @@ public class ReportesController : ControllerBase
     [HttpGet("calificaciones-curso")]
     public async Task<IActionResult> CalificacionesPorCurso(int idCurso, int idPeriodoPublicacion)
     {
-        var curso = await _context.Cursos.FindAsync(idCurso);
+        var curso = await _context.Cursos
+            .Include(c => c.Centro)
+            .FirstOrDefaultAsync(c => c.IdCurso == idCurso);
 
         if (curso == null)
             return NotFound("Curso no encontrado.");
+
+        if (!TieneAccesoAlCentro(curso.CentroId))
+            return Forbid();
 
         var estudiantes = await _context.Inscripciones
             .Include(i => i.Estudiante)
@@ -220,6 +236,7 @@ public class ReportesController : ControllerBase
         {
             Curso = curso.Nombre,
             IdPeriodoPublicacion = idPeriodoPublicacion,
+            Centro = curso.Centro?.Nombre,
             Estudiantes = resultado
         });
     }
@@ -230,10 +247,14 @@ public class ReportesController : ControllerBase
         var curso = await _context.Cursos
             .Include(c => c.Grado)
                 .ThenInclude(g => g.Nivel)
+                 .Include(c => c.Centro)
             .FirstOrDefaultAsync(c => c.IdCurso == idCurso);
 
         if (curso == null)
             return NotFound("Curso no encontrado.");
+
+        if (!TieneAccesoAlCentro(curso.CentroId))
+            return Forbid();
 
         if (curso.Grado.Nivel.Nombre != "Secundaria")
             return BadRequest("Este reporte solo aplica para secundaria.");
@@ -313,6 +334,7 @@ public class ReportesController : ControllerBase
         {
             Curso = curso.Nombre,
             Grado = curso.Grado.Nombre,
+            Centro = curso.Centro?.Nombre,
             Reportes = reportes
         });
     }
@@ -340,10 +362,14 @@ public class ReportesController : ControllerBase
         var curso = await _context.Cursos
             .Include(c => c.Grado)
                 .ThenInclude(g => g.Nivel)
+                 .Include(c => c.Centro)
             .FirstOrDefaultAsync(c => c.IdCurso == idCurso);
 
         if (curso == null)
             return NotFound("Curso no encontrado.");
+
+        if (!TieneAccesoAlCentro(curso.CentroId))
+            return Forbid();
 
         if (!curso.Grado.Nivel.UsaCompetencias)
             return BadRequest("Este reporte solo aplica para primaria.");
@@ -419,6 +445,7 @@ public class ReportesController : ControllerBase
             Curso = curso.Nombre,
             Grado = curso.Grado.Nombre,
             Periodo = periodo.Nombre,
+            Centro = curso.Centro?.Nombre,
             Reportes = reportes
         });
     }
@@ -436,6 +463,8 @@ public class ReportesController : ControllerBase
         var query = _context.AsignacionesDocentes
             .Include(a => a.Maestro)
             .Include(a => a.Curso)
+                .ThenInclude(c => c.Centro)
+            .Include(a => a.Curso)
                 .ThenInclude(c => c.Grado)
                     .ThenInclude(g => g.Nivel)
             .Include(a => a.Materia)
@@ -445,6 +474,17 @@ public class ReportesController : ControllerBase
         if (nivelCoordinador != null)
         {
             query = query.Where(a => a.Curso.Grado.Nivel.Nombre == nivelCoordinador);
+        }
+
+        var rolMaestrosPendientes = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+        if (rolMaestrosPendientes != "Administrador")
+        {
+            var idCentroClaim = User.FindFirst("IdCentro")?.Value;
+
+            if (!int.TryParse(idCentroClaim, out int idCentro))
+                return Forbid();
+
+            query = query.Where(a => a.Curso.CentroId == idCentro);
         }
 
         var asignaciones = await query.ToListAsync();
@@ -504,10 +544,14 @@ public class ReportesController : ControllerBase
         var curso = await _context.Cursos
             .Include(c => c.Grado)
                 .ThenInclude(g => g.Nivel)
+                 .Include(c => c.Centro)
             .FirstOrDefaultAsync(c => c.IdCurso == idCurso);
 
         if (curso == null)
             return NotFound("Curso no encontrado.");
+
+        if (!TieneAccesoAlCentro(curso.CentroId))
+            return Forbid();
 
         if (!curso.Grado.Nivel.UsaCompetencias)
             return BadRequest("Este reporte solo aplica para primaria.");
@@ -590,6 +634,7 @@ public class ReportesController : ControllerBase
         {
             Curso = curso.Nombre,
             Grado = curso.Grado.Nombre,
+            Centro = curso.Centro?.Nombre,
             Reportes = reportes
         });
     }
@@ -603,10 +648,14 @@ public class ReportesController : ControllerBase
         var curso = await _context.Cursos
             .Include(c => c.Grado)
                 .ThenInclude(g => g.Nivel)
+                    .Include(c => c.Centro)
             .FirstOrDefaultAsync(c => c.IdCurso == idCurso);
 
         if (curso == null)
             return NotFound("Curso no encontrado.");
+
+        if (!TieneAccesoAlCentro(curso.CentroId))
+            return Forbid();
 
         var periodo = await _context.PeriodosPublicacion
             .FirstOrDefaultAsync(p => p.IdPeriodoPublicacion == idPeriodoPublicacion);
@@ -772,6 +821,7 @@ public class ReportesController : ControllerBase
             Curso = curso.Nombre,
             Grado = curso.Grado.Nombre,
             Nivel = curso.Grado.Nivel.Nombre,
+            Centro = curso.Centro?.Nombre,
             Periodo = periodo.Nombre,
             Reportes = reportes
         });
@@ -818,7 +868,7 @@ public class ReportesController : ControllerBase
             Escribir(canvas, fontBold, reporte.Estudiante, 250, 500, 10);
 
             // Datos materias
-         
+
 
             float y = 382;
 
@@ -849,10 +899,14 @@ public class ReportesController : ControllerBase
         var curso = await _context.Cursos
             .Include(c => c.Grado)
                 .ThenInclude(g => g.Nivel)
+                .Include(c => c.Centro)
             .FirstOrDefaultAsync(c => c.IdCurso == idCurso);
 
         if (curso == null)
             return NotFound("Curso no encontrado.");
+
+        if (!TieneAccesoAlCentro(curso.CentroId))
+            return Forbid();
 
         var estudiantes = await _context.Inscripciones
             .Include(i => i.Estudiante)
@@ -995,6 +1049,7 @@ public class ReportesController : ControllerBase
             Curso = curso.Nombre,
             Grado = curso.Grado.Nombre,
             Nivel = curso.Grado.Nivel.Nombre,
+            Centro = curso.Centro?.Nombre,
             Reportes = reportes
         });
     }
@@ -1006,6 +1061,9 @@ public class ReportesController : ControllerBase
 
         if (estudiante == null)
             return NotFound("Estudiante no encontrado.");
+
+        if (!TieneAccesoAlCentro(estudiante.CentroId))
+            return Forbid();
 
         var observaciones = await _context.Observaciones
             .Include(o => o.AsignacionDocente)
@@ -1131,6 +1189,7 @@ public class ReportesController : ControllerBase
         var curso = await _context.Cursos
             .Include(c => c.Grado)
                 .ThenInclude(g => g.Nivel)
+                 .Include(c => c.Centro)
             .FirstOrDefaultAsync(c => c.IdCurso == idCurso);
 
         if (curso == null)
@@ -1149,6 +1208,7 @@ public class ReportesController : ControllerBase
         var resultado = new ReporteAnualSecundariaData
         {
             Curso = curso.Nombre,
+
             Grado = curso.Grado.Nombre
         };
 
@@ -1204,6 +1264,7 @@ public class ReportesController : ControllerBase
             {
                 IdEstudiante = estudiante.IdEstudiante,
                 Estudiante = estudiante.Nombres + " " + estudiante.Apellidos,
+
                 Matricula = estudiante.Matricula,
                 Materias = materias
             });
@@ -1213,5 +1274,21 @@ public class ReportesController : ControllerBase
     }
 
 
+
+
+    private bool TieneAccesoAlCentro(int centroId)
+    {
+        var rol = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+
+        if (rol == "Administrador")
+            return true;
+
+        var idCentroClaim = User.FindFirst("IdCentro")?.Value;
+
+        if (!int.TryParse(idCentroClaim, out int idCentro))
+            return false;
+
+        return centroId == idCentro;
+    }
 
 }

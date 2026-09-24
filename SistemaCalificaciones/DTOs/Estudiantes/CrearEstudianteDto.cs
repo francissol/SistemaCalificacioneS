@@ -1,4 +1,7 @@
-﻿namespace SistemaCalificaciones.DTOs.Estudiantes;
+﻿using SistemaCalificaciones.Models;
+using System.ComponentModel.DataAnnotations.Schema;
+
+namespace SistemaCalificaciones.DTOs.Estudiantes;
 
 public class CrearEstudianteDto
 {
@@ -11,7 +14,10 @@ public class CrearEstudianteDto
     public string? Correo { get; set; }
     public string? Direccion { get; set; }
     public DateTime? FechaIngreso { get; set; }
+    public int CentroId { get; set; }
 
+    [ForeignKey("CentroId")]
+    public Centro? Centro { get; set; }
     public int IdCurso { get; set; }
     public int IdAnioEscolar { get; set; }
 

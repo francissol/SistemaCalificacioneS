@@ -21,23 +21,47 @@ public class JwtService
             Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]!)
         );
 
-        var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+        var credentials = new SigningCredentials(
+            key,
+            SecurityAlgorithms.HmacSha256
+        );
 
-        var claims = new[]
+        var claims = new List<Claim>
+    {
+        new Claim(ClaimTypes.NameIdentifier, usuario.IdUsuario.ToString()),
+
+        new Claim(ClaimTypes.Name, usuario.NombreUsuario),
+
+        new Claim(ClaimTypes.Role, usuario.Rol.Nombre),
+
+        new Claim("DebeCambiarPassword",
+            usuario.DebeCambiarPassword.ToString())
+    };
+
+       
+
+        if (usuario.CentroId.HasValue)
         {
-            new Claim(ClaimTypes.NameIdentifier, usuario.IdUsuario.ToString()),
-            new Claim(ClaimTypes.Name, usuario.NombreUsuario),
-            new Claim(ClaimTypes.Role, usuario.Rol.Nombre),
-            new Claim("DebeCambiarPassword", usuario.DebeCambiarPassword.ToString())
-        };
+            claims.Add(new Claim(
+                "IdCentro",
+                usuario.CentroId.Value.ToString()));
+
+            claims.Add(new Claim(
+                "NombreCentro",
+                usuario.Centro?.Nombre ?? ""));
+        }
 
         var token = new JwtSecurityToken(
+
             issuer: _configuration["Jwt:Issuer"],
+
             audience: _configuration["Jwt:Audience"],
+
             claims: claims,
+
             expires: DateTime.Now.AddMinutes(
-                Convert.ToDouble(_configuration["Jwt:ExpireMinutes"])
-            ),
+                Convert.ToDouble(_configuration["Jwt:ExpireMinutes"])),
+
             signingCredentials: credentials
         );
 

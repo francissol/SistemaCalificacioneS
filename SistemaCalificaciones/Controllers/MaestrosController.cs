@@ -11,7 +11,7 @@ namespace SistemaCalificaciones.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Authorize(Roles = "Administrador,CoordinadorPrimaria,CoordinadorSecundaria,CoordinadorPolitecnico")]
-public class MaestrosController : ControllerBase
+public class MaestrosController : BaseController
 {
     private readonly AppDbContext _context;
     private readonly UsuarioGeneratorService _usuarioGenerator;
@@ -25,12 +25,23 @@ public class MaestrosController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> Get()
     {
-        var maestros = await _context.Maestros
-            .Include(m => m.Usuario)
-            .OrderBy(m => m.Nombres)
+        var query = _context.Maestros
+     .Include(m => m.Usuario)
+     .Include(m => m.Centro)
+     .AsQueryable();
+
+        if (!EsAdministrador)
+        {
+            query = query.Where(m => m.CentroId == IdCentro);
+        }
+
+        var maestros = await query
+                    .OrderBy(m => m.Nombres)
             .Select(m => new
             {
                 m.IdMaestro,
+                m.CentroId,
+                Centro = m.Centro.Nombre,
                 m.CodigoEmpleado,
                 m.Nombres,
                 m.Apellidos,
@@ -53,10 +64,16 @@ public class MaestrosController : ControllerBase
     {
         var maestro = await _context.Maestros
             .Include(m => m.Usuario)
+            .Include(m => m.Centro)
             .FirstOrDefaultAsync(m => m.IdMaestro == id);
 
         if (maestro == null)
             return NotFound("Maestro no encontrado.");
+
+        if (!EsAdministrador && maestro.CentroId != IdCentro)
+            return Forbid();
+
+      
 
         return Ok(maestro);
     }
@@ -81,10 +98,16 @@ public class MaestrosController : ControllerBase
         var nombreUsuario = await _usuarioGenerator.GenerarNombreUsuarioAsync(dto.Nombres, dto.Apellidos);
         var passwordTemporal = _usuarioGenerator.GenerarPasswordTemporal();
 
+
+        int centroGuardar = EsAdministrador
+        ? dto.CentroId!.Value
+                 : IdCentro!.Value;
+
         var usuario = new Usuario
         {
             IdRol = rolMaestro.IdRol,
             NombreUsuario = nombreUsuario,
+            CentroId = centroGuardar,
             PasswordHash = _usuarioGenerator.HashearPassword(passwordTemporal),
             DebeCambiarPassword = true,
             Activo = true,
@@ -98,6 +121,7 @@ public class MaestrosController : ControllerBase
         {
             IdUsuario = usuario.IdUsuario,
             CodigoEmpleado = dto.CodigoEmpleado,
+            CentroId = centroGuardar,
             Nombres = dto.Nombres,
             Apellidos = dto.Apellidos,
             Cedula = dto.Cedula,
@@ -126,7 +150,8 @@ public class MaestrosController : ControllerBase
     [HttpPut("{id}")]
     public async Task<IActionResult> Actualizar(int id, CrearMaestroDto dto)
     {
-        var maestro = await _context.Maestros.FindAsync(id);
+        var maestro = await _context.Maestros
+     .FirstOrDefaultAsync(m => m.IdMaestro == id);
 
         if (maestro == null)
             return NotFound("Maestro no encontrado.");
@@ -150,6 +175,10 @@ public class MaestrosController : ControllerBase
         maestro.Especialidad = dto.Especialidad;
         maestro.FechaIngreso = dto.FechaIngreso;
 
+
+        maestro.CentroId = EsAdministrador
+    ? dto.CentroId!.Value
+    : IdCentro!.Value;
         await _context.SaveChangesAsync();
 
         return Ok(maestro);
@@ -167,10 +196,14 @@ public class MaestrosController : ControllerBase
 
         maestro.Activo = !maestro.Activo;
 
+        if (!EsAdministrador && maestro.CentroId != IdCentro)
+            return Forbid();
+
         if (maestro.Usuario != null)
         {
             maestro.Usuario.Activo = maestro.Activo;
         }
+
 
         await _context.SaveChangesAsync();
 

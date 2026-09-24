@@ -1,4 +1,6 @@
-﻿namespace SistemaCalificaciones.Models;
+﻿using System.ComponentModel.DataAnnotations.Schema;
+
+namespace SistemaCalificaciones.Models;
 
 public class Usuario
 {
@@ -6,6 +8,12 @@ public class Usuario
 
     public int IdRol { get; set; }
     public Rol Rol { get; set; } = null!;
+
+
+    public int? CentroId { get; set; }
+
+    [ForeignKey("CentroId")]
+    public Centro? Centro { get; set; }
 
     public string NombreUsuario { get; set; } = string.Empty;
     public string PasswordHash { get; set; } = string.Empty;
@@ -16,7 +24,7 @@ public class Usuario
     public DateTime? UltimoAcceso { get; set; }
     public DateTime FechaCreacion { get; set; } = DateTime.Now;
 
-    public Estudiante? Estudiante { get; set; }
+
     public Maestro? Maestro { get; set; }
-    public Padre? Padre { get; set; }
+ 
 }
