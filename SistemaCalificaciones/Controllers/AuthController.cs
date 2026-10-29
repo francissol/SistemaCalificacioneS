@@ -34,11 +34,6 @@ public class AuthController : ControllerBase
 
         if (!usuario.Activo)
             return Unauthorized("Este usuario está inactivo.");
-        {
-
-        }
-        Console.WriteLine(usuario.PasswordHash);
-        Console.WriteLine(dto.Password);
 
         var passwordValida = BCrypt.Net.BCrypt.Verify(dto.Password, usuario.PasswordHash);
 
@@ -85,38 +80,6 @@ public class AuthController : ControllerBase
 
         if (dto.PasswordNueva.Length < 8)
             return BadRequest("La nueva contraseña debe tener al menos 8 caracteres.");
-
-        var passwordValida = BCrypt.Net.BCrypt.Verify(dto.PasswordActual, usuario.PasswordHash);
-
-        if (!passwordValida)
-            return BadRequest("La contraseña actual no es correcta.");
-
-        usuario.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.PasswordNueva);
-        usuario.DebeCambiarPassword = false;
-
-        await _context.SaveChangesAsync();
-
-        return Ok("Contraseña cambiada correctamente.");
-    }
-
-    [HttpGet("generar-hash")]
-    public IActionResult GenerarHash()
-    {
-        var hash = BCrypt.Net.BCrypt.HashPassword("Admin1234");
-        return Ok(hash);
-    }
-
-    [HttpPost("cambiar-password")]
-    public async Task<IActionResult> CambiarPassword(CambiarPasswordDto dto)
-    {
-        var usuario = await _context.Usuarios
-            .FirstOrDefaultAsync(u => u.IdUsuario == dto.IdUsuario);
-
-        if (usuario == null)
-            return NotFound("Usuario no encontrado.");
-
-        Console.WriteLine(usuario.PasswordHash);
-        Console.WriteLine(dto.PasswordActual);
 
         var passwordValida = BCrypt.Net.BCrypt.Verify(dto.PasswordActual, usuario.PasswordHash);
 

@@ -1,5 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using SistemaCalificaciones.Data;
+using System.Security.Cryptography;
 
 namespace SistemaCalificaciones.Services;
 
@@ -32,9 +33,12 @@ public class UsuarioGeneratorService
         return nombreUsuario;
     }
 
+    // Sin caracteres ambiguos (0/O, 1/l/I) para que sea fácil de dictar o copiar.
+    private const string CaracteresPassword = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+
     public string GenerarPasswordTemporal()
     {
-        return "Mir1234";
+        return RandomNumberGenerator.GetString(CaracteresPassword, 10);
     }
 
     public string HashearPassword(string password)

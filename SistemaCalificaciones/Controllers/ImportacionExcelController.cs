@@ -345,6 +345,7 @@ public class ImportacionExcelController : ControllerBase
         int fallidos = 0;
 
         var errores = new List<object>();
+        var credenciales = new List<object>();
 
         using var stream = new MemoryStream();
         await archivo.CopyToAsync(stream);
@@ -488,6 +489,13 @@ public class ImportacionExcelController : ControllerBase
                 await transaction.CommitAsync();
 
                 exitosos++;
+
+                credenciales.Add(new
+                {
+                    Nombre = $"{nombres} {apellidos}",
+                    Usuario = nombreUsuario,
+                    PasswordTemporal = passwordTemporal
+                });
             }
             catch (Exception ex)
             {
@@ -509,7 +517,8 @@ public class ImportacionExcelController : ControllerBase
             total,
             exitosos,
             fallidos,
-            errores
+            errores,
+            credenciales
         });
     }
 }

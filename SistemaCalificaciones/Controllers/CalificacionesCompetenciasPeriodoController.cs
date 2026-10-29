@@ -8,9 +8,11 @@ namespace SistemaCalificaciones.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-//[Authorize(Roles = "Administrador,Maestro")]
+[Authorize]
 public class CalificacionesCompetenciasPeriodoController : ControllerBase
 {
+    private const string RolesCaptura = "Administrador,Maestro,CoordinadorPrimaria,CoordinadorSecundaria,CoordinadorPolitecnico";
+
     private readonly AppDbContext _context;
 
     public CalificacionesCompetenciasPeriodoController(AppDbContext context)
@@ -18,8 +20,8 @@ public class CalificacionesCompetenciasPeriodoController : ControllerBase
         _context = context;
     }
 
-    
     [HttpGet("captura-directa")]
+    [Authorize(Roles = RolesCaptura)]
     public async Task<IActionResult> ObtenerCapturaDirecta(int idAsignacionDocente, int idPeriodoPublicacion)
     {
         var asignacion = await _context.AsignacionesDocentes
@@ -82,27 +84,6 @@ public class CalificacionesCompetenciasPeriodoController : ControllerBase
             })
             .ToListAsync();
 
-        var depuracion = new
-        {
-            PeriodoActivo = periodo.Activo,
-            FechaHoy = DateTime.Today,
-            FechaCierre = periodo.FechaCierre.Date,
-            FechaDentroDelPlazo = DateTime.Today <= periodo.FechaCierre.Date,
-            CantidadNotas = notas.Count,
-            CantidadNotasPublicadas = notas.Count(n => n.Publicada),
-            HayNotasPublicadas = notas.Any(n => n.Publicada)
-        };
-
-        Console.WriteLine(
-            System.Text.Json.JsonSerializer.Serialize(depuracion)
-        );
-
-        Console.WriteLine($"Periodo activo: {periodo.Activo}");
-        Console.WriteLine($"Fecha actual: {DateTime.Today:yyyy-MM-dd}");
-        Console.WriteLine($"Fecha de cierre: {periodo.FechaCierre:yyyy-MM-dd}");
-        Console.WriteLine($"Total de notas: {notas.Count}");
-        Console.WriteLine($"Notas publicadas: {notas.Count(n => n.Publicada)}");
-
         return Ok(new
         {
             asignacion.IdAsignacionDocente,
@@ -123,6 +104,7 @@ public class CalificacionesCompetenciasPeriodoController : ControllerBase
 
     // Guarda o actualiza notas directas. Una nota nula elimina la nota borrador existente.
     [HttpPut("guardar-directas")]
+    [Authorize(Roles = RolesCaptura)]
     public async Task<IActionResult> GuardarNotasDirectas([FromBody] GuardarNotasDirectasDto dto)
     {
         if (dto.IdAsignacionDocente <= 0 || dto.IdPeriodoPublicacion <= 0)
@@ -249,6 +231,7 @@ public class CalificacionesCompetenciasPeriodoController : ControllerBase
     }
 
     [HttpPost("calcular")]
+    [Authorize(Roles = RolesCaptura)]
     public async Task<IActionResult> Calcular(int idAsignacionDocente, int idPeriodoPublicacion)
     {
         var asignacion = await _context.AsignacionesDocentes
@@ -350,6 +333,7 @@ public class CalificacionesCompetenciasPeriodoController : ControllerBase
 
 
     [HttpPut("publicar")]
+    [Authorize(Roles = RolesCaptura)]
     public async Task<IActionResult> Publicar(
         int idAsignacionDocente,
         int idPeriodoPublicacion)
@@ -414,7 +398,7 @@ public class CalificacionesCompetenciasPeriodoController : ControllerBase
 
 
     [HttpGet("estudiante/{idEstudiante}")]
-    //  [Authorize(Roles = "Administrador,Maestro,Estudiante")]
+    [Authorize(Roles = "Administrador,Maestro,Estudiante")]
     public async Task<IActionResult> GetPorEstudiante(int idEstudiante)
     {
         var calificaciones = await _context.CalificacionesCompetenciasPeriodo

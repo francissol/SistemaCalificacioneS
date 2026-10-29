@@ -31,7 +31,13 @@ builder.Services.AddCors(options =>
     });
 });
 
-var jwtKey = builder.Configuration["Jwt:Key"]!;
+// La clave no va en appsettings.json: en desarrollo se lee de User Secrets
+// y en producción de la variable de entorno Jwt__Key.
+var jwtKey = builder.Configuration["Jwt:Key"];
+
+if (string.IsNullOrWhiteSpace(jwtKey) || Encoding.UTF8.GetByteCount(jwtKey) < 32)
+    throw new InvalidOperationException(
+        "Falta la configuración 'Jwt:Key' (mínimo 32 bytes). Defínala con 'dotnet user-secrets set Jwt:Key <clave>' o con la variable de entorno Jwt__Key.");
 
 builder.Services.AddAuthentication(options =>
 {

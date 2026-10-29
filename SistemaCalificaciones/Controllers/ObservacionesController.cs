@@ -20,7 +20,7 @@ public class ObservacionesController : ControllerBase
     }
 
     [HttpGet("estudiante/{idEstudiante}")]
-    [Authorize(Roles = "Administrador,Maestro,Estudiante,Padre")]
+    [Authorize(Roles = "Administrador,Maestro,Estudiante")]
     public async Task<IActionResult> GetPorEstudiante(int idEstudiante)
     {
         var observaciones = await _context.Observaciones
@@ -45,7 +45,7 @@ public class ObservacionesController : ControllerBase
     }
 
     [HttpGet("padres/estudiante/{idEstudiante}")]
-    [Authorize(Roles = "Administrador,Maestro,Padre")]
+    [Authorize(Roles = "Administrador,Maestro")]
     public async Task<IActionResult> GetObservacionesPadres(int idEstudiante)
     {
         var observaciones = await _context.Observaciones

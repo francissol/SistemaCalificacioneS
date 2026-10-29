@@ -123,7 +123,7 @@ public class CalificacionesPeriodoController : ControllerBase
     }
 
     [HttpGet("estudiante/{idEstudiante}")]
-    [Authorize(Roles = "Administrador,Maestro,Estudiante,Padre")]
+    [Authorize(Roles = "Administrador,Maestro,Estudiante")]
     public async Task<IActionResult> GetPorEstudiante(int idEstudiante)
     {
         var calificaciones = await _context.CalificacionesPeriodo

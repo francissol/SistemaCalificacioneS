@@ -49,6 +49,15 @@ public class EstudiantesController : BaseController
                 e.Correo,
                 e.Activo,
 
+                e.CentroId,
+                Centro = e.Centro != null ? e.Centro.Nombre : null,
+
+                Grado = e.Inscripciones
+                    .Where(i => i.Estado == "Activo")
+                    .OrderByDescending(i => i.IdInscripcion)
+                    .Select(i => i.Curso.Grado.Nombre)
+                    .FirstOrDefault(),
+
                 CursoActual = e.Inscripciones
                     .Where(i => i.Estado == "Activo")
                     .OrderByDescending(i => i.IdInscripcion)
