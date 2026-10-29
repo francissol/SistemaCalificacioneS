@@ -320,8 +320,22 @@ public class AppDbContext : DbContext
             .HasIndex(c => new { c.IdEstudiante, c.IdAsignacionDocente, c.IdPeriodoPublicacion })
             .IsUnique();
 
-        modelBuilder.Entity<CursoMateria>()
-            .HasKey(cm => cm.IdCursoMateria);
+        modelBuilder.Entity<CursoMateria>(entity =>
+        {
+            entity.ToTable("CursoMaterias");
+
+            entity.HasKey(cm => cm.IdCursoMateria);
+
+            entity.HasOne(cm => cm.Curso)
+                .WithMany()
+                .HasForeignKey(cm => cm.IdCurso)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(cm => cm.Materia)
+                .WithMany()
+                .HasForeignKey(cm => cm.IdMateria)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
 
         // =========================
         // RELACIONES COMPETENCIAS

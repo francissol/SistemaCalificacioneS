@@ -101,8 +101,18 @@ public class CursosController : ControllerBase
         if (nivelCoordinador != null &&
             curso.Grado.Nivel.Nombre != nivelCoordinador)
             return Forbid();
-
-        return Ok(curso);
+        return Ok(new
+        {
+            curso.IdCurso,
+            curso.Nombre,
+            curso.Seccion,
+            curso.Activo,
+            curso.IdGrado,
+            curso.CentroId,
+            Centro = curso.Centro.Nombre,
+            Grado = curso.Grado.Nombre,
+            Nivel = curso.Grado.Nivel.Nombre
+        });
     }
 
     [HttpGet("grado/{idGrado}")]
@@ -201,13 +211,29 @@ public class CursosController : ControllerBase
             Activo = true
         };
 
-        _context.Cursos.Add(curso);
+_context.Cursos.Add(curso);
 
-        await _context.SaveChangesAsync();
+await _context.SaveChangesAsync();
 
-        await AsignarCompetenciasAutomaticas(curso.IdCurso);
+await AsignarCompetenciasAutomaticas(curso.IdCurso);
 
-        return Ok(curso);
+var cursoCreado = await _context.Cursos
+    .AsNoTracking()
+    .Where(c => c.IdCurso == curso.IdCurso)
+    .Select(c => new
+    {
+        c.IdCurso,
+        c.Nombre,
+        c.Seccion,
+        c.Activo,
+        c.IdGrado,
+        c.CentroId,
+        Grado = c.Grado.Nombre,
+        Nivel = c.Grado.Nivel.Nombre
+    })
+    .FirstAsync();
+
+return Ok(cursoCreado);
     }
 
    
@@ -274,7 +300,17 @@ public class CursosController : ControllerBase
 
         await _context.SaveChangesAsync();
 
-        return Ok(curso);
+        return Ok(new
+        {
+            curso.IdCurso,
+            curso.Nombre,
+            curso.Seccion,
+            curso.Activo,
+            curso.IdGrado,
+            curso.CentroId,
+            Grado = curso.Grado.Nombre,
+            Nivel = curso.Grado.Nivel.Nombre
+        });
     }
 
     [HttpPut("{id}/estado")]

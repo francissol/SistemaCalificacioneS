@@ -25,6 +25,7 @@ public class PanelMaestroController : ControllerBase
         
     }
 
+
     [HttpGet("mis-asignaciones")]
     public async Task<IActionResult> MisAsignaciones()
     {
@@ -32,25 +33,25 @@ public class PanelMaestroController : ControllerBase
 
         var maestro = await _context.Maestros
             .FirstOrDefaultAsync(m => m.IdUsuario == idUsuario);
-        
 
         if (maestro == null)
             return NotFound("Maestro no encontrado.");
 
         var asignaciones = await _context.AsignacionesDocentes
-            .Include(a => a.Curso)
-                .ThenInclude(c => c.Grado)
-                .ThenInclude(g => g.Nivel )
-            .Include(a => a.Materia)
-            .Include(a => a.AnioEscolar)
-            
-            .Where(a => a.IdMaestro == maestro.IdMaestro && a.Activo && a.AnioEscolar.Activo )
+            .Where(a =>
+                a.IdMaestro == maestro.IdMaestro &&
+                a.Activo &&
+                a.AnioEscolar.Activo)
             .Select(a => new
             {
                 a.IdAsignacionDocente,
+
+             
+                IdCurso = a.IdCurso,
+
                 Curso = a.Curso.Nombre,
                 Grado = a.Curso.Grado.Nombre,
-               maestro = a.Maestro.Nombres,
+                maestro = a.Maestro.Nombres,
                 Nivel = a.Curso.Grado.Nivel.Nombre,
                 Materia = a.Materia.Nombre,
                 AnioEscolar = a.AnioEscolar.Nombre
@@ -59,6 +60,7 @@ public class PanelMaestroController : ControllerBase
 
         return Ok(asignaciones);
     }
+
 
     [HttpGet("asignacion/{idAsignacionDocente}/estudiantes")]
     public async Task<IActionResult> EstudiantesPorAsignacion(int idAsignacionDocente)
