@@ -21,19 +21,16 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("ReactPolicy", policy =>
     {
-        policy.WithOrigins("http://localhost:5173",
-            "https://sistema-calificaciones-front-12a3.vercel.app/",
-            "'https://sistema-de-calificaciones1.vercel.app",
-            "https://sistema-calificaciones-front-12a3-fk6lwiacj-mir-calificaciones.vercel.app",
-            "https://sistema-calificaciones-front-obd85f0yt-mir-calificaciones.vercel.app",
-            "https://sistema-calificaciones-front.vercel.app/")
+      
+        policy.WithOrigins(
+                "http://localhost:5173",
+                "https://sistema-de-calificaciones1.vercel.app")
               .AllowAnyHeader()
               .AllowAnyMethod();
     });
 });
 
-// La clave no va en appsettings.json: en desarrollo se lee de User Secrets
-// y en producción de la variable de entorno Jwt__Key.
+
 var jwtKey = builder.Configuration["Jwt:Key"];
 
 if (string.IsNullOrWhiteSpace(jwtKey) || Encoding.UTF8.GetByteCount(jwtKey) < 32)
@@ -91,16 +88,20 @@ builder.Services.AddSwaggerGen(options =>
         }
     });
 });
-builder.Services.AddScoped<JwtService>();
 builder.Services.AddScoped<UsuarioGeneratorService>();
 var app = builder.Build();
 
-app.UseSwagger();
-app.UseSwaggerUI();
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
+// CORS va primero para que el preflight (OPTIONS) reciba sus cabeceras
+// antes de que cualquier otro middleware pueda responder o redirigir.
+app.UseCors("ReactPolicy");
 
 app.UseHttpsRedirection();
-
-app.UseCors("ReactPolicy");
 
 app.UseAuthentication();
 app.UseAuthorization();
