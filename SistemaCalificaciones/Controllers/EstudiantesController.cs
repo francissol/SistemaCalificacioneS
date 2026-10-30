@@ -74,6 +74,134 @@ public class EstudiantesController : BaseController
 
         return Ok(estudiantes);
     }
+
+    // ============================================================
+    // LISTADO PAGINADO
+    // ============================================================
+
+    [HttpGet("paginado")]
+    public async Task<IActionResult> GetPaginado(
+        int pagina = 1,
+        int tamanoPagina = 20,
+        string? busqueda = null,
+        string? centro = null,
+        string? nivel = null,
+        string? grado = null,
+        string? curso = null,
+        string? estado = null)
+    {
+        var query = _context.Estudiantes.AsQueryable();
+
+        if (!EsAdministrador)
+        {
+            query = query.Where(e => e.CentroId == IdCentro);
+        }
+
+        if (!string.IsNullOrWhiteSpace(busqueda))
+        {
+            var texto = busqueda.Trim();
+
+            query = query.Where(e =>
+                e.Nombres.Contains(texto) ||
+                e.Apellidos.Contains(texto) ||
+                (e.Nombres + " " + e.Apellidos).Contains(texto) ||
+                e.Matricula.Contains(texto) ||
+                (e.Correo != null && e.Correo.Contains(texto)));
+        }
+
+        if (estado == "Activo")
+            query = query.Where(e => e.Activo);
+        else if (estado == "Inactivo")
+            query = query.Where(e => !e.Activo);
+
+        var listado = query
+            .OrderBy(e => e.Nombres)
+            .ThenBy(e => e.Apellidos)
+            .ThenBy(e => e.IdEstudiante)
+            .Select(e => new
+            {
+                e.IdEstudiante,
+                e.Matricula,
+                e.Nombres,
+                e.Apellidos,
+                e.Telefono,
+                e.Correo,
+                e.Activo,
+
+                e.CentroId,
+                Centro = e.Centro != null ? e.Centro.Nombre : null,
+
+                Grado = e.Inscripciones
+                    .Where(i => i.Estado == "Activo")
+                    .OrderByDescending(i => i.IdInscripcion)
+                    .Select(i => i.Curso.Grado.Nombre)
+                    .FirstOrDefault(),
+
+                CursoActual = e.Inscripciones
+                    .Where(i => i.Estado == "Activo")
+                    .OrderByDescending(i => i.IdInscripcion)
+                    .Select(i => i.Curso.Nombre)
+                    .FirstOrDefault(),
+
+                Nivel = e.Inscripciones
+                    .Where(i => i.Estado == "Activo")
+                    .OrderByDescending(i => i.IdInscripcion)
+                    .Select(i => i.Curso.Grado.Nivel.Nombre)
+                    .FirstOrDefault()
+            });
+
+        if (!string.IsNullOrWhiteSpace(centro))
+            listado = listado.Where(e => e.Centro == centro);
+
+        if (!string.IsNullOrWhiteSpace(nivel))
+            listado = listado.Where(e => e.Nivel == nivel);
+
+        if (!string.IsNullOrWhiteSpace(grado))
+            listado = listado.Where(e => e.Grado == grado);
+
+        if (!string.IsNullOrWhiteSpace(curso))
+            listado = listado.Where(e => e.CursoActual == curso);
+
+        return Ok(await listado.PaginarAsync(pagina, tamanoPagina));
+    }
+
+    // ============================================================
+    // OPCIONES DE FILTROS
+    // ============================================================
+
+    [HttpGet("filtros")]
+    public async Task<IActionResult> GetFiltros()
+    {
+        var estudiantes = _context.Estudiantes.AsQueryable();
+
+        if (!EsAdministrador)
+        {
+            estudiantes = estudiantes.Where(e => e.CentroId == IdCentro);
+        }
+
+        var centros = await estudiantes
+            .Where(e => e.Centro != null)
+            .Select(e => e.Centro!.Nombre)
+            .Distinct()
+            .ToListAsync();
+
+        // Combinaciones existentes para que cada filtro dependa del anterior
+        var combinaciones = await estudiantes
+            .SelectMany(e => e.Inscripciones
+                .Where(i => i.Estado == "Activo")
+                .Select(i => new
+                {
+                    Centro = e.Centro != null ? e.Centro.Nombre : null,
+                    Nivel = i.Curso.Grado.Nivel.Nombre,
+                    Grado = i.Curso.Grado.Nombre,
+                    Curso = i.Curso.Nombre
+                }))
+            .Distinct()
+            .ToListAsync();
+
+        return Ok(new { centros, combinaciones });
+    }
+
     // ============================================================
     // OBTENER ESTUDIANTE
     // ============================================================

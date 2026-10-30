@@ -5,6 +5,7 @@ using SistemaCalificaciones.Data;
 using SistemaCalificaciones.DTOs.Maestros;
 using SistemaCalificaciones.Models;
 using SistemaCalificaciones.Services;
+using SistemaCalificaciones.Helpers;
 
 namespace SistemaCalificaciones.Controllers;
 
@@ -57,6 +58,129 @@ public class MaestrosController : BaseController
             .ToListAsync();
 
         return Ok(maestros);
+    }
+
+    [HttpGet("paginado")]
+    public async Task<IActionResult> GetPaginado(
+        int pagina = 1,
+        int tamanoPagina = 20,
+        string? busqueda = null,
+        string? centro = null,
+        string? nivel = null,
+        string? curso = null,
+        string? materia = null,
+        string? especialidad = null,
+        string? estado = null)
+    {
+        var query = _context.Maestros.AsQueryable();
+
+        if (!EsAdministrador)
+        {
+            query = query.Where(m => m.CentroId == IdCentro);
+        }
+
+        if (!string.IsNullOrWhiteSpace(busqueda))
+        {
+            var texto = busqueda.Trim();
+
+            query = query.Where(m =>
+                m.Nombres.Contains(texto) ||
+                m.Apellidos.Contains(texto) ||
+                (m.Nombres + " " + m.Apellidos).Contains(texto) ||
+                (m.Usuario != null && m.Usuario.NombreUsuario.Contains(texto)) ||
+                (m.Cedula != null && m.Cedula.Contains(texto)) ||
+                (m.CodigoEmpleado != null && m.CodigoEmpleado.Contains(texto)) ||
+                (m.Correo != null && m.Correo.Contains(texto)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(centro))
+            query = query.Where(m => m.Centro != null && m.Centro.Nombre == centro);
+
+        if (!string.IsNullOrWhiteSpace(especialidad))
+            query = query.Where(m => m.Especialidad == especialidad);
+
+        if (estado == "Activo")
+            query = query.Where(m => m.Activo);
+        else if (estado == "Inactivo")
+            query = query.Where(m => !m.Activo);
+
+        // Nivel, curso y materia salen de las asignaciones activas
+        if (!string.IsNullOrWhiteSpace(nivel) ||
+            !string.IsNullOrWhiteSpace(curso) ||
+            !string.IsNullOrWhiteSpace(materia))
+        {
+            query = query.Where(m => m.AsignacionesDocentes.Any(a =>
+                a.Activo &&
+                (string.IsNullOrEmpty(nivel) || a.Curso.Grado.Nivel.Nombre == nivel) &&
+                (string.IsNullOrEmpty(curso) || a.Curso.Grado.Nombre + " - " + a.Curso.Nombre == curso) &&
+                (string.IsNullOrEmpty(materia) || a.Materia.Nombre == materia)));
+        }
+
+        var resultado = await query
+            .OrderBy(m => m.Nombres)
+            .ThenBy(m => m.Apellidos)
+            .ThenBy(m => m.IdMaestro)
+            .Select(m => new
+            {
+                m.IdMaestro,
+                m.CentroId,
+                Centro = m.Centro != null ? m.Centro.Nombre : null,
+                m.CodigoEmpleado,
+                m.Nombres,
+                m.Apellidos,
+                m.Cedula,
+                m.Telefono,
+                m.Correo,
+                m.Direccion,
+                m.Especialidad,
+                m.FechaIngreso,
+                m.Activo,
+                Usuario = m.Usuario != null ? m.Usuario.NombreUsuario : null,
+                Niveles = m.AsignacionesDocentes
+                    .Where(a => a.Activo)
+                    .Select(a => a.Curso.Grado.Nivel.Nombre)
+                    .Distinct()
+                    .ToList()
+            })
+            .PaginarAsync(pagina, tamanoPagina);
+
+        return Ok(resultado);
+    }
+
+    [HttpGet("filtros")]
+    public async Task<IActionResult> GetFiltros()
+    {
+        var maestros = _context.Maestros.AsQueryable();
+
+        if (!EsAdministrador)
+        {
+            maestros = maestros.Where(m => m.CentroId == IdCentro);
+        }
+
+        var datos = await maestros
+            .Select(m => new
+            {
+                Centro = m.Centro != null ? m.Centro.Nombre : null,
+                m.Especialidad
+            })
+            .Distinct()
+            .ToListAsync();
+
+        // Combinaciones existentes para que cada filtro dependa del anterior
+        var asignaciones = await maestros
+            .SelectMany(m => m.AsignacionesDocentes
+                .Where(a => a.Activo)
+                .Select(a => new
+                {
+                    Centro = m.Centro != null ? m.Centro.Nombre : null,
+                    Nivel = a.Curso.Grado.Nivel.Nombre,
+                    Curso = a.Curso.Grado.Nombre + " - " + a.Curso.Nombre,
+                    Materia = a.Materia.Nombre
+                }))
+            .Distinct()
+            .ToListAsync();
+
+        return Ok(new { datos, asignaciones });
     }
 
     [HttpGet("{id}")]

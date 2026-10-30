@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SistemaCalificaciones.Data;
 using SistemaCalificaciones.DTOs.Padres;
+using SistemaCalificaciones.Helpers;
 
 namespace SistemaCalificaciones.Controllers;
 
@@ -40,6 +41,53 @@ public class PadresController : ControllerBase
             .ToListAsync();
 
         return Ok(padres);
+    }
+
+    [HttpGet("paginado")]
+    public async Task<IActionResult> GetPaginado(
+        int pagina = 1,
+        int tamanoPagina = 20,
+        string? busqueda = null,
+        string? estado = null)
+    {
+        var query = _context.Padres.AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(busqueda))
+        {
+            var texto = busqueda.Trim();
+
+            query = query.Where(p =>
+                p.Nombres.Contains(texto) ||
+                p.Apellidos.Contains(texto) ||
+                (p.Nombres + " " + p.Apellidos).Contains(texto) ||
+                (p.Telefono != null && p.Telefono.Contains(texto)) ||
+                (p.Correo != null && p.Correo.Contains(texto)));
+        }
+
+        if (estado == "Activo")
+            query = query.Where(p => p.Activo);
+        else if (estado == "Inactivo")
+            query = query.Where(p => !p.Activo);
+
+        var resultado = await query
+            .OrderBy(p => p.Nombres)
+            .ThenBy(p => p.Apellidos)
+            .ThenBy(p => p.IdPadre)
+            .Select(p => new
+            {
+                p.IdPadre,
+                p.Nombres,
+                p.Apellidos,
+                p.Telefono,
+                p.Correo,
+                p.Direccion,
+                p.Ocupacion,
+                p.Activo,
+                CantidadHijos = p.PadreEstudiantes.Count
+            })
+            .PaginarAsync(pagina, tamanoPagina);
+
+        return Ok(resultado);
     }
 
     [HttpGet("{id}")]
