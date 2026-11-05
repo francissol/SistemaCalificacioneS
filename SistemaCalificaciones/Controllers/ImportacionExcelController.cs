@@ -311,6 +311,12 @@ public class ImportacionExcelController : ControllerBase
                     Error = ex.Message
                 });
             }
+            finally
+            {
+                // Cada fila es independiente: sin esto el contexto acumula
+                // entidades (y reintenta insertar las de filas fallidas)
+                _context.ChangeTracker.Clear();
+            }
         }
 
         return Ok(new
@@ -508,6 +514,12 @@ public class ImportacionExcelController : ControllerBase
                     Fila = row.RowNumber(),
                     Error = ex.Message
                 });
+            }
+            finally
+            {
+                // Cada fila es independiente: sin esto el contexto acumula
+                // entidades (y reintenta insertar las de filas fallidas)
+                _context.ChangeTracker.Clear();
             }
         }
 

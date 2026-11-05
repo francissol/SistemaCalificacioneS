@@ -3,6 +3,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using SistemaCalificaciones.Data;
 using Microsoft.OpenApi.Models;
+using Microsoft.AspNetCore.HttpOverrides;
+
 using SistemaCalificaciones.Services;
 using System.Text;
 
@@ -90,6 +92,11 @@ builder.Services.AddSwaggerGen(options =>
 });
 builder.Services.AddScoped<UsuarioGeneratorService>();
 var app = builder.Build();
+
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+});
 
 if (app.Environment.IsDevelopment())
 {
