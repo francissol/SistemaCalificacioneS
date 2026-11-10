@@ -18,6 +18,8 @@ public class AppDbContext : DbContext
 
     public DbSet<ResultadoAprendizaje> ResultadosAprendizaje { get; set; }
 
+    public DbSet<CalificacionRA> CalificacionesRA => Set<CalificacionRA>();
+
     public DbSet<Centro> Centros { get; set; } // <--- Dejado una sola vez
 
     public DbSet<AnioEscolar> AniosEscolares => Set<AnioEscolar>();
@@ -319,6 +321,29 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<CalificacionPeriodo>()
             .HasIndex(c => new { c.IdEstudiante, c.IdAsignacionDocente, c.IdPeriodoPublicacion })
             .IsUnique();
+
+        // La tabla CalificacionesRA ya existe en la base de datos (creada fuera de las
+        // migraciones), así que se mapea pero se excluye para que ninguna migración la toque.
+        modelBuilder.Entity<CalificacionRA>(entity =>
+        {
+            entity.ToTable("CalificacionesRA", t => t.ExcludeFromMigrations());
+
+            entity.HasKey(c => c.IdCalificacionRA);
+
+            entity.Property(c => c.NotaFinal).HasColumnType("decimal(5,2)");
+            entity.Property(c => c.FechaCalculo).HasColumnType("datetime");
+            entity.Property(c => c.FechaPublicacion).HasColumnType("datetime");
+
+            entity.HasOne(c => c.AsignacionDocente)
+                .WithMany()
+                .HasForeignKey(c => c.IdAsignacionDocente)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(c => c.Estudiante)
+                .WithMany()
+                .HasForeignKey(c => c.IdEstudiante)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
 
         modelBuilder.Entity<CursoMateria>(entity =>
         {

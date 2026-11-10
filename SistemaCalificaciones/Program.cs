@@ -25,8 +25,8 @@ builder.Services.AddCors(options =>
     {
       
         policy.WithOrigins(
-                "http://localhost:5173",
-                "https://sistema-de-calificaciones1.vercel.app")
+                "http://localhost:5173"
+                )
               .AllowAnyHeader()
               .AllowAnyMethod();
     });

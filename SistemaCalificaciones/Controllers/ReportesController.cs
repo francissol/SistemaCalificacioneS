@@ -754,7 +754,14 @@ public class ReportesController : ControllerBase
 
                 var valoresRA = new decimal?[12];
 
-                for (int i = 0; i < ras.Count && i < 12; i++)
+                // Igual que las demás materias: solo se muestran notas RA publicadas.
+                var raPublicada = await _context.CalificacionesRA
+                    .AnyAsync(c =>
+                        c.IdAsignacionDocente == asignacion.IdAsignacionDocente &&
+                        c.IdEstudiante == estudiante.IdEstudiante &&
+                        c.Publicada);
+
+                for (int i = 0; raPublicada && i < ras.Count && i < 12; i++)
                 {
                     var ra = ras[i];
 
@@ -783,10 +790,12 @@ public class ReportesController : ControllerBase
                     }
                 }
 
-                decimal? totalTecnico = valoresRA
-     .Where(x => x.HasValue)
-     .Select(x => x!.Value)
-     .Sum();
+                decimal? totalTecnico = raPublicada
+                    ? valoresRA
+                        .Where(x => x.HasValue)
+                        .Select(x => x!.Value)
+                        .Sum()
+                    : null;
 
                 materiasTecnicas.Add(new
                 {
@@ -984,7 +993,14 @@ public class ReportesController : ControllerBase
 
                 var valoresRA = new decimal?[12];
 
-                for (int i = 0; i < ras.Count && i < 12; i++)
+                // Igual que las demás materias: solo se muestran notas RA publicadas.
+                var raPublicada = await _context.CalificacionesRA
+                    .AnyAsync(c =>
+                        c.IdAsignacionDocente == asignacion.IdAsignacionDocente &&
+                        c.IdEstudiante == estudiante.IdEstudiante &&
+                        c.Publicada);
+
+                for (int i = 0; raPublicada && i < ras.Count && i < 12; i++)
                 {
                     var ra = ras[i];
 
@@ -1008,10 +1024,12 @@ public class ReportesController : ControllerBase
                         valoresRA[i] = Math.Round(notaRA, 2);
                 }
 
-                var totalTecnico = valoresRA
-                    .Where(x => x.HasValue)
-                    .Select(x => x!.Value)
-                    .Sum();
+                decimal? totalTecnico = raPublicada
+                    ? valoresRA
+                        .Where(x => x.HasValue)
+                        .Select(x => x!.Value)
+                        .Sum()
+                    : null;
 
                 materiasTecnicas.Add(new
                 {
