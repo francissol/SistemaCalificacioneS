@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SistemaCalificaciones.Data;
+using SistemaCalificaciones.Helpers;
 using SistemaCalificaciones.Models;
 
 namespace SistemaCalificaciones.Controllers;
@@ -70,19 +71,26 @@ public class CalificacionesCompetenciasPeriodoController : ControllerBase
             .OrderBy(e => e.Apellidos).ThenBy(e => e.Nombres)
             .ToListAsync();
 
-        var notas = await _context.CalificacionesCompetenciasPeriodo
+        var registros = await _context.CalificacionesCompetenciasPeriodo
             .Where(c => c.IdAsignacionDocente == idAsignacionDocente &&
                         c.IdPeriodoPublicacion == idPeriodoPublicacion)
-            .Select(c => new
-            {
-                c.IdEstudiante,
-                c.IdCompetencia,
-                Nota = (decimal?)c.Promedio,
-                c.Publicada,
-                c.FechaPublicacion,
-                c.FechaRegistro
-            })
             .ToListAsync();
+
+        var notas = registros.Select(c => new
+        {
+            c.IdEstudiante,
+            c.IdCompetencia,
+            Nota = (decimal?)c.Promedio,
+            // La recuperación se abre sola cuando la nota es menor que 70
+            RequiereRecuperacion = RecuperacionHelper.RequiereRecuperacion(c.Promedio),
+            ValorMaximoRecuperacion = RecuperacionHelper.ValorMaximoRecuperacion(c.Promedio),
+            c.NotaRecuperacion,
+            c.FechaRecuperacion,
+            c.NotaFinal,
+            c.Publicada,
+            c.FechaPublicacion,
+            c.FechaRegistro
+        });
 
         return Ok(new
         {
@@ -181,6 +189,8 @@ public class CalificacionesCompetenciasPeriodoController : ControllerBase
                 return BadRequest("Las notas deben estar entre 0 y 100.");
         }
 
+        var recuperacionesEliminadas = 0;
+
         foreach (var item in dto.Notas)
         {
             var actual = existentes.FirstOrDefault(c =>
@@ -209,11 +219,148 @@ public class CalificacionesCompetenciasPeriodoController : ControllerBase
             {
                 actual.Promedio = item.Nota.Value;
                 actual.FechaRegistro = DateTime.Now;
+
+                if (LimpiarRecuperacionInvalida(actual))
+                    recuperacionesEliminadas++;
             }
         }
 
         await _context.SaveChangesAsync();
-        return Ok(new { mensaje = "Notas directas guardadas correctamente.", cantidad = dto.Notas.Count });
+        return Ok(new
+        {
+            mensaje = "Notas directas guardadas correctamente.",
+            cantidad = dto.Notas.Count,
+            // Recuperaciones borradas porque la nota nueva llegó a 70 o ya no cabían en 100 - nota
+            recuperacionesEliminadas
+        });
+    }
+
+    // Si la nota cambió y la recuperación ya no aplica (nota >= 70 o excede 100 - nota), se elimina.
+    private static bool LimpiarRecuperacionInvalida(CalificacionCompetenciaPeriodo calificacion)
+    {
+        if (!calificacion.NotaRecuperacion.HasValue)
+            return false;
+
+        if (RecuperacionHelper.RecuperacionValida(calificacion.Promedio, calificacion.NotaRecuperacion.Value))
+            return false;
+
+        calificacion.NotaRecuperacion = null;
+        calificacion.FechaRecuperacion = null;
+        return true;
+    }
+
+    // Guarda las notas de recuperación. Solo se aceptan para competencias con nota menor que 70,
+    // y cada una puede valer como máximo lo que le falta a la nota para llegar a 100.
+    // Una recuperación nula elimina la existente.
+    [HttpPut("guardar-recuperaciones")]
+    [Authorize(Roles = RolesCaptura)]
+    public async Task<IActionResult> GuardarRecuperaciones([FromBody] GuardarRecuperacionesDto dto)
+    {
+        if (dto.IdAsignacionDocente <= 0 || dto.IdPeriodoPublicacion <= 0)
+            return BadRequest("Debes indicar una asignación docente y un período válidos.");
+
+        if (dto.Recuperaciones == null || dto.Recuperaciones.Count == 0)
+            return BadRequest("Debes enviar al menos una nota de recuperación.");
+
+        if (dto.Recuperaciones.GroupBy(r => new { r.IdEstudiante, r.IdCompetencia }).Any(g => g.Count() > 1))
+            return BadRequest("La solicitud contiene recuperaciones duplicadas para un estudiante y una competencia.");
+
+        var asignacion = await _context.AsignacionesDocentes
+            .Include(a => a.Curso).ThenInclude(c => c.Grado).ThenInclude(g => g.Nivel)
+            .Include(a => a.Materia)
+            .FirstOrDefaultAsync(a => a.IdAsignacionDocente == dto.IdAsignacionDocente);
+
+        if (asignacion == null)
+            return NotFound("No se encontró la asignación docente.");
+
+        if (asignacion.Materia.EsTecnica)
+            return BadRequest("Las materias técnicas no usan recuperación por competencias.");
+
+        if (!asignacion.Curso.Grado.Nivel.UsaCompetencias)
+            return BadRequest("Este nivel no está configurado para trabajar con competencias.");
+
+        var periodo = await _context.PeriodosPublicacion
+            .FirstOrDefaultAsync(p => p.IdPeriodoPublicacion == dto.IdPeriodoPublicacion);
+
+        if (periodo == null)
+            return NotFound("No se encontró el período.");
+
+        if (periodo.IdAnioEscolar != asignacion.IdAnioEscolar)
+            return BadRequest("El período no pertenece al año escolar de esta asignación.");
+
+        if (!periodo.Activo || DateTime.Today > periodo.FechaCierre.Date)
+            return BadRequest("El período está inactivo o ya cerró. No se pueden modificar sus recuperaciones.");
+
+        var existentes = await _context.CalificacionesCompetenciasPeriodo
+            .Include(c => c.Competencia)
+            .Where(c => c.IdAsignacionDocente == dto.IdAsignacionDocente &&
+                        c.IdPeriodoPublicacion == dto.IdPeriodoPublicacion)
+            .ToListAsync();
+
+        // Se valida todo antes de modificar para no guardar a medias
+        var errores = new List<string>();
+        var cambios = new List<(CalificacionCompetenciaPeriodo Calificacion, decimal? Recuperacion)>();
+
+        foreach (var item in dto.Recuperaciones)
+        {
+            var calificacion = existentes.FirstOrDefault(c =>
+                c.IdEstudiante == item.IdEstudiante && c.IdCompetencia == item.IdCompetencia);
+
+            if (calificacion == null)
+            {
+                errores.Add($"Estudiante {item.IdEstudiante}, competencia {item.IdCompetencia}: no tiene nota registrada en este período.");
+                continue;
+            }
+
+            if (!item.NotaRecuperacion.HasValue)
+            {
+                cambios.Add((calificacion, null));
+                continue;
+            }
+
+            if (!RecuperacionHelper.RequiereRecuperacion(calificacion.Promedio))
+            {
+                errores.Add($"Estudiante {item.IdEstudiante}, competencia {calificacion.Competencia.Codigo}: la nota es {calificacion.Promedio} y no requiere recuperación (mínimo {RecuperacionHelper.NotaMinimaAprobacion}).");
+                continue;
+            }
+
+            var maximo = RecuperacionHelper.ValorMaximoRecuperacion(calificacion.Promedio);
+
+            if (item.NotaRecuperacion.Value < 0 || item.NotaRecuperacion.Value > maximo)
+            {
+                errores.Add($"Estudiante {item.IdEstudiante}, competencia {calificacion.Competencia.Codigo}: la recuperación debe estar entre 0 y {maximo} (nota {calificacion.Promedio}).");
+                continue;
+            }
+
+            cambios.Add((calificacion, item.NotaRecuperacion.Value));
+        }
+
+        if (errores.Count > 0)
+            return BadRequest(new { mensaje = "No se guardó ninguna recuperación.", errores });
+
+        foreach (var (calificacion, recuperacion) in cambios)
+        {
+            calificacion.NotaRecuperacion = recuperacion;
+            calificacion.FechaRecuperacion = recuperacion.HasValue ? DateTime.Now : null;
+        }
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new { mensaje = "Recuperaciones guardadas correctamente.", cantidad = cambios.Count });
+    }
+
+    public class GuardarRecuperacionesDto
+    {
+        public int IdAsignacionDocente { get; set; }
+        public int IdPeriodoPublicacion { get; set; }
+        public List<RecuperacionDto> Recuperaciones { get; set; } = new();
+    }
+
+    public class RecuperacionDto
+    {
+        public int IdEstudiante { get; set; }
+        public int IdCompetencia { get; set; }
+        public decimal? NotaRecuperacion { get; set; }
     }
 
     public class GuardarNotasDirectasDto
@@ -322,6 +469,7 @@ public class CalificacionesCompetenciasPeriodoController : ControllerBase
                 {
                     calificacion.Promedio = promedio;
                     calificacion.FechaRegistro = DateTime.Now;
+                    LimpiarRecuperacionInvalida(calificacion);
                 }
             }
         }
@@ -409,21 +557,22 @@ public class CalificacionesCompetenciasPeriodoController : ControllerBase
             .Where(c => c.IdEstudiante == idEstudiante && c.Publicada)
             .OrderBy(c => c.AsignacionDocente.Materia.Nombre)
             .ThenBy(c => c.Competencia.Codigo)
-            .Select(c => new
-            {
-                c.IdCalificacionCompetenciaPeriodo,
-                c.IdAsignacionDocente,
-                c.IdPeriodoPublicacion,
-                c.IdCompetencia,
-                Materia = c.AsignacionDocente.Materia.Nombre,
-                Periodo = c.PeriodoPublicacion.Nombre,
-                Competencia = c.Competencia.Codigo,
-                NombreCompetencia = c.Competencia.Nombre,
-                c.Promedio,
-                c.FechaPublicacion
-            })
             .ToListAsync();
 
-        return Ok(calificaciones);
+        return Ok(calificaciones.Select(c => new
+        {
+            c.IdCalificacionCompetenciaPeriodo,
+            c.IdAsignacionDocente,
+            c.IdPeriodoPublicacion,
+            c.IdCompetencia,
+            Materia = c.AsignacionDocente.Materia.Nombre,
+            Periodo = c.PeriodoPublicacion.Nombre,
+            Competencia = c.Competencia.Codigo,
+            NombreCompetencia = c.Competencia.Nombre,
+            c.Promedio,
+            c.NotaRecuperacion,
+            c.NotaFinal,
+            c.FechaPublicacion
+        }));
     }
 }

@@ -461,5 +461,9 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<CalificacionCompetenciaPeriodo>()
             .Property(c => c.Promedio)
             .HasColumnType("decimal(5,2)");
+
+        modelBuilder.Entity<CalificacionCompetenciaPeriodo>()
+            .Property(c => c.NotaRecuperacion)
+            .HasColumnType("decimal(5,2)");
     }
 }

@@ -91,6 +91,7 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 builder.Services.AddScoped<UsuarioGeneratorService>();
+builder.Services.AddScoped<CalculoRAService>();
 var app = builder.Build();
 
 app.UseForwardedHeaders(new ForwardedHeadersOptions

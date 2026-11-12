@@ -155,8 +155,12 @@ public class ReportesController : ControllerBase
                     C2 = g.Where(x => x.Competencia.Codigo == "C2").Select(x => (decimal?)x.Promedio).FirstOrDefault(),
                     C3 = g.Where(x => x.Competencia.Codigo == "C3").Select(x => (decimal?)x.Promedio).FirstOrDefault(),
                     C4 = g.Where(x => x.Competencia.Codigo == "C4").Select(x => (decimal?)x.Promedio).FirstOrDefault(),
+                    RC1 = Recuperacion(g, "C1"),
+                    RC2 = Recuperacion(g, "C2"),
+                    RC3 = Recuperacion(g, "C3"),
+                    RC4 = Recuperacion(g, "C4"),
                     PromedioFinal = g.Any()
-                        ? Math.Round(g.Average(x => x.Promedio), 2)
+                        ? Math.Round(g.Average(x => x.NotaFinal), 2)
                         : 0
                 })
                 .OrderBy(x => x.Materia)
@@ -345,13 +349,40 @@ public class ReportesController : ControllerBase
     {
         var notas = calificaciones
             .Where(c => c.Competencia.Codigo == codigoCompetencia)
-            .Select(c => c.Promedio)
+            .Select(c => c.NotaFinal)
             .ToList();
 
         if (!notas.Any())
             return null;
 
         return Math.Round(notas.Average(), 2);
+    }
+
+    // Valor que se muestra en la columna de recuperación (RC/RP) de los reportes:
+    // la nota de la competencia más lo que sacó en la recuperación (ej.: 60 + 20 = 80).
+    // Null si la competencia no tuvo recuperación.
+    private static decimal? Recuperacion(
+        IEnumerable<CalificacionCompetenciaPeriodo> calificaciones,
+        string codigoCompetencia)
+    {
+        return NotaRecuperacionReporte(calificaciones
+            .FirstOrDefault(c => c.Competencia.Codigo == codigoCompetencia));
+    }
+
+    private static decimal? NotaRecuperacionReporte(CalificacionCompetenciaPeriodo? calificacion)
+    {
+        return calificacion?.NotaRecuperacion.HasValue == true
+            ? calificacion.NotaFinal
+            : null;
+    }
+
+    private static decimal? FinalCompetencia(
+        IEnumerable<CalificacionCompetenciaPeriodo> calificaciones,
+        string codigoCompetencia)
+    {
+        return calificaciones
+            .FirstOrDefault(c => c.Competencia.Codigo == codigoCompetencia)
+            ?.NotaFinal;
     }
 
     [HttpGet("primaria/curso/{idCurso}/periodo/{idPeriodoPublicacion}")]
@@ -421,8 +452,11 @@ public class ReportesController : ControllerBase
                     C3 = g.Where(x => x.Competencia.Codigo == "C3")
                           .Select(x => (decimal?)x.Promedio)
                           .FirstOrDefault(),
+                    RC1 = Recuperacion(g, "C1"),
+                    RC2 = Recuperacion(g, "C2"),
+                    RC3 = Recuperacion(g, "C3"),
                     PromedioFinal = g.Any()
-                        ? Math.Round(g.Average(x => x.Promedio), 2)
+                        ? Math.Round(g.Average(x => x.NotaFinal), 2)
                         : 0
                 })
                 .OrderBy(x => x.Materia)
@@ -493,17 +527,37 @@ public class ReportesController : ControllerBase
 
         foreach (var asignacion in asignaciones)
         {
-            var totalEstudiantes = await _context.Inscripciones
-                .CountAsync(i =>
+            var estudiantesActivos = _context.Inscripciones
+                .Where(i =>
                     i.IdCurso == asignacion.IdCurso &&
                     i.IdAnioEscolar == asignacion.IdAnioEscolar &&
-                    i.Estado == "Activo");
+                    i.Estado == "Activo")
+                .Select(i => i.IdEstudiante);
 
-            var totalPublicadas = await _context.CalificacionesCompetenciasPeriodo
-                .CountAsync(c =>
-                    c.IdAsignacionDocente == asignacion.IdAsignacionDocente &&
-                    c.IdPeriodoPublicacion == idPeriodoPublicacion &&
-                    c.Publicada);
+            var totalEstudiantes = await estudiantesActivos.Distinct().CountAsync();
+
+            // Se cuentan ESTUDIANTES con nota publicada (no filas): en competencias hay una fila
+            // por estudiante y competencia, así que contar filas daba "Completado" antes de tiempo.
+            // Las materias técnicas no publican por período: publican su nota anual en CalificacionesRA,
+            // así que para ellas el estado es el mismo en todos los períodos del año.
+            var totalPublicadas = asignacion.Materia.EsTecnica
+                ? await _context.CalificacionesRA
+                    .Where(c =>
+                        c.IdAsignacionDocente == asignacion.IdAsignacionDocente &&
+                        c.Publicada &&
+                        estudiantesActivos.Contains(c.IdEstudiante))
+                    .Select(c => c.IdEstudiante)
+                    .Distinct()
+                    .CountAsync()
+                : await _context.CalificacionesCompetenciasPeriodo
+                    .Where(c =>
+                        c.IdAsignacionDocente == asignacion.IdAsignacionDocente &&
+                        c.IdPeriodoPublicacion == idPeriodoPublicacion &&
+                        c.Publicada &&
+                        estudiantesActivos.Contains(c.IdEstudiante))
+                    .Select(c => c.IdEstudiante)
+                    .Distinct()
+                    .CountAsync();
 
             var completo = totalEstudiantes > 0 && totalPublicadas >= totalEstudiantes;
 
@@ -514,6 +568,8 @@ public class ReportesController : ControllerBase
                 Grado = asignacion.Curso.Grado.Nombre,
                 Nivel = asignacion.Curso.Grado.Nivel.Nombre,
                 Materia = asignacion.Materia.Nombre,
+                // "RA" = materia técnica (publicación anual); "Competencias" = publicación por período
+                TipoCalificacion = asignacion.Materia.EsTecnica ? "RA" : "Competencias",
                 TotalEstudiantes = totalEstudiantes,
                 TotalPublicadas = totalPublicadas,
                 Estado = completo ? "Completado" : "Pendiente"
@@ -720,7 +776,14 @@ public class ReportesController : ControllerBase
                     .FirstOrDefault(c => c.Competencia.Codigo == "C4")
                     ?.Promedio;
 
-                var valores = new List<decimal?> { c1, c2, c3, c4 }
+                // El promedio de la materia usa la nota final (nota + recuperación)
+                var valores = new List<decimal?>
+                    {
+                        FinalCompetencia(calificaciones, "C1"),
+                        FinalCompetencia(calificaciones, "C2"),
+                        FinalCompetencia(calificaciones, "C3"),
+                        FinalCompetencia(calificaciones, "C4")
+                    }
                     .Where(x => x.HasValue)
                     .Select(x => x!.Value)
                     .ToList();
@@ -736,6 +799,10 @@ public class ReportesController : ControllerBase
                     C2 = c2,
                     C3 = c3,
                     C4 = c4,
+                    RC1 = Recuperacion(calificaciones, "C1"),
+                    RC2 = Recuperacion(calificaciones, "C2"),
+                    RC3 = Recuperacion(calificaciones, "C3"),
+                    RC4 = Recuperacion(calificaciones, "C4"),
                     PromedioFinal = promedioFinal
                 });
             }
@@ -1116,17 +1183,26 @@ public class ReportesController : ControllerBase
             .Where(c => c.Competencia.Codigo == codigoCompetencia)
             .Select(c => new
             {
-                Periodo = c.PeriodoPublicacion.Nombre,
-                c.Promedio
+                Periodo = c.PeriodoPublicacion.Nombre.ToLower(),
+                c.Promedio,
+                // RP = nota + recuperación (ej.: 60 + 20 = 80); null si no tuvo recuperación
+                RP = NotaRecuperacionReporte(c),
+                c.NotaFinal
             })
             .ToList();
 
-        decimal? p1 = notas.FirstOrDefault(n => n.Periodo.ToLower().Contains("primer"))?.Promedio;
-        decimal? p2 = notas.FirstOrDefault(n => n.Periodo.ToLower().Contains("segundo"))?.Promedio;
-        decimal? p3 = notas.FirstOrDefault(n => n.Periodo.ToLower().Contains("tercer"))?.Promedio;
-        decimal? p4 = notas.FirstOrDefault(n => n.Periodo.ToLower().Contains("cuarto"))?.Promedio;
+        var n1 = notas.FirstOrDefault(n => n.Periodo.Contains("primer"));
+        var n2 = notas.FirstOrDefault(n => n.Periodo.Contains("segundo"));
+        var n3 = notas.FirstOrDefault(n => n.Periodo.Contains("tercer"));
+        var n4 = notas.FirstOrDefault(n => n.Periodo.Contains("cuarto"));
 
-        var valores = new List<decimal?> { p1, p2, p3, p4 }
+        decimal? p1 = n1?.Promedio;
+        decimal? p2 = n2?.Promedio;
+        decimal? p3 = n3?.Promedio;
+        decimal? p4 = n4?.Promedio;
+
+        // El promedio anual usa la nota final de cada período (nota + recuperación)
+        var valores = new List<decimal?> { n1?.NotaFinal, n2?.NotaFinal, n3?.NotaFinal, n4?.NotaFinal }
             .Where(x => x.HasValue)
             .Select(x => x!.Value)
             .ToList();
@@ -1137,16 +1213,16 @@ public class ReportesController : ControllerBase
         return new CompetenciaAnualDto
         {
             P1 = p1,
-            RP1 = null,
+            RP1 = n1?.RP,
 
             P2 = p2,
-            RP2 = null,
+            RP2 = n2?.RP,
 
             P3 = p3,
-            RP3 = null,
+            RP3 = n3?.RP,
 
             P4 = p4,
-            RP4 = null,
+            RP4 = n4?.RP,
 
             Final = final
         };
